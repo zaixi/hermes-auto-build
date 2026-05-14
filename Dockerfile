@@ -11,10 +11,8 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install feishu dependencies explicitly.
-# Upstream moved lark-oapi out of the [all] composite extra to lazy-install,
-# but the Feishu adapter checks for it before lazy_deps runs.
-# Install here so Feishu works out of the box.
+# Install feishu and hindsight dependencies
 RUN uv pip install --no-cache-dir \
     "lark-oapi==1.5.3" \
-    "qrcode==7.4.2"
+    "qrcode==7.4.2" \
+    "hindsight-client"
