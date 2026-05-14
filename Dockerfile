@@ -1,4 +1,4 @@
-FROM nousresearch/hermes-agent:main
+FROM nousresearch/hermes-agent:latest
 
 # Install additional apt packages
 RUN apt-get update && \
