@@ -1,0 +1,131 @@
+name: Build and Push Hermes Agent Image
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: '强制构建（忽略版本检测）'
+        required: false
+        default: 'false'
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/hermes-agent
+  UPSTREAM_IMAGE: nousresearch/hermes-agent
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      upstream_tag: ${{ steps.check.outputs.upstream_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check upstream version
+        id: check
+        run: |
+          python3 << 'PYEOF'
+          import urllib.request, json, os, re
+
+          UPSTREAM_IMAGE = os.environ['UPSTREAM_IMAGE']
+          IMAGE_NAME = os.environ['IMAGE_NAME']
+          FORCE = os.environ.get('INPUT_FORCE', 'false').lower()
+
+          def docker_hub_get(path, headers=None):
+              req = urllib.request.Request(
+                  f'https://hub.docker.com/v2{path}',
+                  headers=headers or {'Accept': 'application/json'}
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as r:
+                      return json.loads(r.read())
+              except Exception as e:
+                  print(f'  [warn] Docker Hub API error: {e}', flush=True)
+                  return None
+
+          # 1. Get upstream main tag info
+          print(f'Checking upstream: {UPSTREAM_IMAGE}:main', flush=True)
+          main_tag = docker_hub_get(f'/repositories/{UPSTREAM_IMAGE}/tags/main')
+          if not main_tag:
+              print('  Failed to get upstream main tag, forcing build', flush=True)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write('should_build=true\nupstream_tag=unknown\n')
+              exit(0)
+
+          main_digest = main_tag.get('digest', '')
+          print(f'  Digest: {main_digest[:30]}...', flush=True)
+
+          # Find the SHA tag that matches main's digest (e.g. sha-c872f07c...)
+          all_tags = docker_hub_get(
+              f'/repositories/{UPSTREAM_IMAGE}/tags?page_size=200'
+          )
+          upstream_tag = ''
+          if all_tags and 'results' in all_tags:
+              for t in all_tags['results']:
+                  tname = t.get('name', '')
+                  if t.get('digest') == main_digest and re.match(r'^sha-[a-f0-9]{40}$', tname):
+                      upstream_tag = tname
+                      break
+
+          if not upstream_tag:
+              # Fallback: construct from digest
+              short = main_digest.replace('sha256:', 'sha-')[:44]
+              upstream_tag = short
+              print(f'  No SHA tag found, using derived: {upstream_tag}', flush=True)
+          else:
+              print(f'  SHA tag: {upstream_tag}', flush=True)
+
+          # 2. Force build check
+          if FORCE == 'true':
+              print('Force build enabled', flush=True)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f'should_build=true\nupstream_tag={upstream_tag}\n')
+              exit(0)
+
+          # 3. Check if we already built this version
+          print(f'Checking existing build: {IMAGE_NAME}:{upstream_tag}', flush=True)
+          our_tag = docker_hub_get(
+              f'/repositories/{IMAGE_NAME}/tags/{upstream_tag}'
+          )
+
+          if our_tag:
+              print(f'  Already built for {upstream_tag}, skipping', flush=True)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f'should_build=false\nupstream_tag={upstream_tag}\n')
+          else:
+              print(f'  New version detected, building...', flush=True)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f'should_build=true\nupstream_tag={upstream_tag}\n')
+          PYEOF
+
+  build:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check.outputs.upstream_tag }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to: type=inline
