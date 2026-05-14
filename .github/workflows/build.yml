@@ -47,11 +47,11 @@ jobs:
                   print(f'  [warn] Docker Hub API error: {e}', flush=True)
                   return None
 
-          # 1. Get upstream main tag info
-          print(f'Checking upstream: {UPSTREAM_IMAGE}:main', flush=True)
-          main_tag = docker_hub_get(f'/repositories/{UPSTREAM_IMAGE}/tags/main')
+          # 1. Get upstream latest tag info
+          print(f'Checking upstream: {UPSTREAM_IMAGE}:latest', flush=True)
+          main_tag = docker_hub_get(f'/repositories/{UPSTREAM_IMAGE}/tags/latest')
           if not main_tag:
-              print('  Failed to get upstream main tag, forcing build', flush=True)
+              print('  Failed to get upstream latest tag, forcing build', flush=True)
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write('should_build=true\nupstream_tag=unknown\n')
               exit(0)
@@ -59,7 +59,7 @@ jobs:
           main_digest = main_tag.get('digest', '')
           print(f'  Digest: {main_digest[:30]}...', flush=True)
 
-          # Find the SHA tag that matches main's digest (e.g. sha-c872f07c...)
+          # Find the SHA tag that matches latest's digest (e.g. sha-c872f07c...)
           all_tags = docker_hub_get(
               f'/repositories/{UPSTREAM_IMAGE}/tags?page_size=200'
           )
