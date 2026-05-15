@@ -27,13 +27,15 @@ jobs:
 
       - name: Check upstream version
         id: check
+        env:
+          FORCE_MODE: ${{ inputs.force || github.event.inputs.force || '' }}
         run: |
           python3 << 'PYEOF'
           import urllib.request, json, os, re
 
           UPSTREAM_IMAGE = os.environ['UPSTREAM_IMAGE']
           IMAGE_NAME = os.environ['IMAGE_NAME']
-          FORCE = os.environ.get('INPUT_FORCE', 'false').lower()
+          FORCE = os.environ.get('FORCE_MODE', 'false').lower()
 
           def docker_hub_get(path, headers=None):
               req = urllib.request.Request(
