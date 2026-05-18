@@ -1,3 +1,2 @@
 #!/bin/bash
-export PATH="${PATH/\/usr\/local\/shims/}"
-exec /usr/local/bin/rtk docker "$@" || exec /usr/bin/docker "$@"
+exec /usr/bin/docker "$@"

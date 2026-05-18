@@ -1,3 +1,2 @@
 #!/bin/bash
-export PATH="${PATH/\/usr\/local\/shims/}"
-exec /usr/local/bin/rtk find "$@" || exec /usr/bin/find "$@"
+exec /usr/bin/find "$@"
