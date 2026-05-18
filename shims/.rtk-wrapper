@@ -1,6 +1,8 @@
 #!/bin/bash
-# RTK wrapper: strip shims from PATH, delegate to RTK
-# All shims in this directory delegate to this wrapper via exec.
+# RTK wrapper: first arg is the real command name, resolve to absolute path
+CMD="$1"
+shift
 PATH=$(echo ":$PATH:" | sed 's#:/usr/local/shims/*:#:#g; s#^:##; s#:$##')
 export PATH
-exec /usr/bin/rtk "$(basename "$0")" "$@"
+REAL_CMD=$(command -v "$CMD")
+exec /usr/bin/rtk "$REAL_CMD" "$@"
