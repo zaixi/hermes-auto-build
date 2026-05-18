@@ -1,2 +1,2 @@
 #!/bin/bash
-exec /usr/bin/du "$@"
+exec /usr/local/shims/.rtk-wrapper

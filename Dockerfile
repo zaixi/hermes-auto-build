@@ -17,9 +17,18 @@ RUN uv pip install --no-cache-dir \
     "qrcode==7.4.2" \
     "hindsight-client"
 
-# Shim scripts (placeholder for RTK integration)
+# RTK (Rust Token Killer) — CLI output compressor
+ARG RTK_VERSION=v0.39.0
+RUN curl -fsSL \
+    "https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rtk-x86_64-unknown-linux-gnu.tar.gz" \
+    | tar xz -C /usr/local/bin && chmod +x /usr/local/bin/rtk
+
+# Shim scripts: intercept CLI commands → route through RTK
 COPY shims/ /usr/local/shims/
-RUN chmod +x /usr/local/shims/*
+RUN chmod +x /usr/local/shims/* /usr/local/shims/.rtk-wrapper
 
 # Custom skills — synced to volume by entrypoint's skills_sync.py
 COPY skills /opt/hermes/skills/
+
+# Inject shims at front of PATH so agent picks them up first
+ENV PATH="/usr/local/shims:${PATH}"

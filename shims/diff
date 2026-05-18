@@ -1,2 +1,2 @@
 #!/bin/bash
-exec /usr/bin/diff "$@"
+exec /usr/local/shims/.rtk-wrapper

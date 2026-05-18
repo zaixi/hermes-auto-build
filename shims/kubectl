@@ -1,2 +1,2 @@
 #!/bin/bash
-exec /usr/bin/kubectl "$@"
+exec /usr/local/shims/.rtk-wrapper
