@@ -1,3 +1,3 @@
 #!/bin/bash
-export PATH="${PATH//:\/usr\/local\/shims/}"
-/usr/local/bin/rtk diff "$@" 2>/dev/null || exec /usr/bin/diff "$@"
+export PATH="${PATH/\/usr\/local\/shims/}"
+exec /usr/local/bin/rtk diff "$@" || exec /usr/bin/diff "$@"

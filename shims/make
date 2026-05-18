@@ -1,3 +1,3 @@
 #!/bin/bash
-export PATH="${PATH//:\/usr\/local\/shims/}"
-/usr/local/bin/rtk make "$@" 2>/dev/null || exec /usr/bin/make "$@"
+export PATH="${PATH/\/usr\/local\/shims/}"
+exec /usr/local/bin/rtk make "$@" || exec /usr/bin/make "$@"

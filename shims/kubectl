@@ -1,3 +1,3 @@
 #!/bin/bash
-export PATH="${PATH//:\/usr\/local\/shims/}"
-/usr/local/bin/rtk kubectl "$@" 2>/dev/null || exec /usr/bin/kubectl "$@"
+export PATH="${PATH/\/usr\/local\/shims/}"
+exec /usr/local/bin/rtk kubectl "$@" || exec /usr/bin/kubectl "$@"
