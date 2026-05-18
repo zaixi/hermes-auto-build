@@ -21,5 +21,5 @@ RUN uv pip install --no-cache-dir \
 COPY shims/ /usr/local/shims/
 RUN chmod +x /usr/local/shims/*
 
-# Caveman skill: reduce output token verbosity
-COPY skills/ /opt/hermes/skills/
+# Custom skills — synced to volume by entrypoint's skills_sync.py
+COPY skills /opt/hermes/skills/
