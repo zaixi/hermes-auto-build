@@ -19,9 +19,9 @@ RUN uv pip install --no-cache-dir \
 
 # RTK (Rust Token Killer) — CLI output compressor
 ARG RTK_VERSION=v0.39.0
-RUN curl -fsSL \
-    "https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rtk-x86_64-unknown-linux-gnu.tar.gz" \
-    | tar xz -C /usr/local/bin && chmod +x /usr/local/bin/rtk
+RUN curl -fsSL -o /tmp/rtk.deb \
+    "https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rtk_0.39.0-1_amd64.deb" && \
+    dpkg -i /tmp/rtk.deb && rm /tmp/rtk.deb
 
 # Shim scripts: intercept CLI commands → route through RTK
 COPY shims/ /usr/local/shims/

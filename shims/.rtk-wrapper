@@ -3,4 +3,4 @@
 # All shims in this directory delegate to this wrapper via exec.
 PATH=$(echo ":$PATH:" | sed 's#:/usr/local/shims/*:#:#g; s#^:##; s#:$##')
 export PATH
-exec /usr/local/bin/rtk "$(basename "$0")" "$@"
+exec /usr/bin/rtk "$(basename "$0")" "$@"
