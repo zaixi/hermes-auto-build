@@ -31,5 +31,10 @@ RUN uv pip install --no-cache-dir \
 ENV RTK_INSTALL_DIR=/usr/local/bin
 RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 
+# agent-browser (browser_navigate) + Chromium, and Lark/Feishu CLI
+RUN npm install -g agent-browser @larksuite/cli && \
+    agent-browser install --with-deps && \
+    rm -rf /tmp/* /root/.npm /root/.cache /tmp/.npm
+
 # Custom skills — synced to volume by entrypoint's skills_sync.py
 COPY skills /opt/hermes/skills/
