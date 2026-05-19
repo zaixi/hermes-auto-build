@@ -3,6 +3,12 @@ FROM nousresearch/hermes-agent:latest
 # Ensure venv bin is on PATH for all processes (gateway, terminal, sandbox)
 ENV PATH="/opt/hermes/.venv/bin:${PATH}"
 
+# Ensure .venv/bin survives login shell (used by terminal tool's env snapshot)
+# Login shells source /etc/profile which resets PATH to system defaults.
+# /etc/profile.d/*.sh is the standard Debian mechanism to extend login PATH.
+RUN mkdir -p /etc/profile.d && \
+    echo 'export PATH="/opt/hermes/.venv/bin:$PATH"' > /etc/profile.d/hermes-path.sh
+
 # Install additional apt packages
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
