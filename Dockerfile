@@ -1,5 +1,8 @@
 FROM nousresearch/hermes-agent:latest
 
+# Ensure venv bin is on PATH for all processes (gateway, terminal, sandbox)
+ENV PATH="/opt/hermes/.venv/bin:${PATH}"
+
 # Install additional apt packages
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
