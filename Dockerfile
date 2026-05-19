@@ -19,6 +19,7 @@ RUN uv pip install --no-cache-dir \
     "rtk-hermes"
 
 # RTK (Rust Token Killer) — CLI output compressor, auto-latest
+ENV RTK_INSTALL_DIR=/usr/local/bin
 RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 
 # Custom skills — synced to volume by entrypoint's skills_sync.py
