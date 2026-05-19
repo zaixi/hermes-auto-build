@@ -11,24 +11,15 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install feishu and hindsight dependencies
+# Install feishu, hindsight, and rtk-hermes plugin dependencies
 RUN uv pip install --no-cache-dir \
     "lark-oapi==1.5.3" \
     "qrcode==7.4.2" \
-    "hindsight-client"
+    "hindsight-client" \
+    "rtk-hermes"
 
-# RTK (Rust Token Killer) — CLI output compressor
-ARG RTK_VERSION=v0.39.0
-RUN curl -fsSL -o /tmp/rtk.deb \
-    "https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/rtk_0.39.0-1_amd64.deb" && \
-    dpkg -i /tmp/rtk.deb && rm /tmp/rtk.deb
-
-# Shim scripts: intercept CLI commands → route through RTK
-COPY shims/ /usr/local/shims/
-RUN chmod +x /usr/local/shims/* /usr/local/shims/.rtk-wrapper
+# RTK (Rust Token Killer) — CLI output compressor, auto-latest
+RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 
 # Custom skills — synced to volume by entrypoint's skills_sync.py
 COPY skills /opt/hermes/skills/
-
-# Inject shims at front of PATH so agent picks them up first
-ENV PATH="/usr/local/shims:${PATH}"
