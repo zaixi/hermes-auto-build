@@ -23,7 +23,9 @@ RUN uv pip install --no-cache-dir \
     "lark-oapi==1.5.3" \
     "qrcode==7.4.2" \
     "hindsight-client" \
-    "rtk-hermes"
+    "rtk-hermes" \
+    "aiohttp" \
+    "httpx"
 
 # RTK (Rust Token Killer) — CLI output compressor, auto-latest
 ENV RTK_INSTALL_DIR=/usr/local/bin
