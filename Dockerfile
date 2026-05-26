@@ -16,7 +16,8 @@ RUN apt-get update && \
         unzip \
         diffutils \
         socat \
-        zip && \
+        zip \
+        chromium && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
