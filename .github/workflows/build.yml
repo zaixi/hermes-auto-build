@@ -31,7 +31,7 @@ jobs:
           FORCE_MODE: ${{ inputs.force || github.event.inputs.force || '' }}
         run: |
           python3 << 'PYEOF'
-          import urllib.request, json, os, re
+          import urllib.request, json, os, re, datetime
 
           UPSTREAM_IMAGE = os.environ['UPSTREAM_IMAGE']
           IMAGE_NAME = os.environ['IMAGE_NAME']
@@ -54,14 +54,15 @@ jobs:
           main_tag = docker_hub_get(f'/repositories/{UPSTREAM_IMAGE}/tags/latest')
           if not main_tag:
               print('  Failed to get upstream latest tag, forcing build', flush=True)
+              today = datetime.date.today().strftime('v%Y.%-m.%-d')
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write('should_build=true\nupstream_tag=unknown\n')
+                  f.write(f'should_build=true\nupstream_tag={today}\n')
               exit(0)
 
           main_digest = main_tag.get('digest', '')
           print(f'  Digest: {main_digest[:30]}...', flush=True)
 
-          # Find the SHA tag that matches latest's digest (e.g. sha-c872f07c...)
+          # Find the date version tag matching latest's digest (e.g. v2026.5.29)
           all_tags = docker_hub_get(
               f'/repositories/{UPSTREAM_IMAGE}/tags?page_size=200'
           )
@@ -69,26 +70,26 @@ jobs:
           if all_tags and 'results' in all_tags:
               for t in all_tags['results']:
                   tname = t.get('name', '')
-                  if t.get('digest') == main_digest and re.match(r'^sha-[a-f0-9]{40}$', tname):
+                  if t.get('digest') == main_digest and re.match(r'^v\d{4}\.\d{1,2}\.\d{1,2}$', tname):
                       upstream_tag = tname
                       break
 
           if not upstream_tag:
-              # Fallback: construct from digest
-              short = main_digest.replace('sha256:', 'sha-')[:44]
-              upstream_tag = short
-              print(f'  No SHA tag found, using derived: {upstream_tag}', flush=True)
+              # Fallback: use today's date
+              today = datetime.date.today().strftime('v%Y.%-m.%-d')
+              upstream_tag = today
+              print(f'  No date tag found on upstream, using today: {upstream_tag}', flush=True)
           else:
-              print(f'  SHA tag: {upstream_tag}', flush=True)
+              print(f'  Found date tag: {upstream_tag}', flush=True)
 
-          # 2. Force build check
+          # 2. Force build check — always builds even if already built
           if FORCE == 'true':
               print('Force build enabled', flush=True)
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write(f'should_build=true\nupstream_tag={upstream_tag}\n')
               exit(0)
 
-          # 3. Check if we already built this version
+          # 3. Optional: skip if we already built this date tag
           print(f'Checking existing build: {IMAGE_NAME}:{upstream_tag}', flush=True)
           our_tag = docker_hub_get(
               f'/repositories/{IMAGE_NAME}/tags/{upstream_tag}'
