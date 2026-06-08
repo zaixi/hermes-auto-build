@@ -1,4 +1,4 @@
-FROM hub.liyj.site/library/node:22-slim
+FROM node:22-slim
 
 LABEL description="Camofox Browser - Anti-detection browser server with VNC"
 LABEL source="https://github.com/jo-inc/camofox-browser"
@@ -7,31 +7,31 @@ LABEL source="https://github.com/jo-inc/camofox-browser"
 RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
     sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list 2>/dev/null
 
-# Install all deps including build tools + VNC for interactive login
 RUN apt-get update && apt-get install -y \
-    # Camoufox 运行时依赖
     libgtk-3-0 libdbus-glib-1-2 libxt6 libasound2 \
     libx11-xcb1 libxcomposite1 libxcursor1 libxdamage1 \
     libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \
     libegl1-mesa libgl1-mesa-dri libgbm1 xvfb \
     fonts-liberation fonts-noto-color-emoji fonts-noto-cjk fontconfig \
-    # VNC / noVNC 依赖
     x11vnc novnc websockify python3-websockify \
-    # 构建依赖
     build-essential \
-    # 工具
     ca-certificates curl unzip python3-minimal \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Camofox
+# 复制自定义 VNC watcher（修复 Xvfb 检测 + x11vnc 崩溃恢复）
+COPY scripts/vnc-watcher.sh /tmp/vnc-watcher.sh
+
+# Install Camofox + 应用补丁
 RUN npm install -g only-allow@1.2.2 && \
     npm install -g @askjo/camofox-browser@1.11.2 && \
-    # 清理构建依赖
+    sed -i 's/vdDisplay = localVirtualDisplay.get()/vdDisplay = await localVirtualDisplay.get()/' \
+      /usr/local/lib/node_modules/@askjo/camofox-browser/server.js && \
+    cp /tmp/vnc-watcher.sh /usr/local/lib/node_modules/@askjo/camofox-browser/plugins/vnc/vnc-watcher.sh && \
+    chmod +x /usr/local/lib/node_modules/@askjo/camofox-browser/plugins/vnc/vnc-watcher.sh && \
     apt-get purge -y build-essential && apt-get autoremove -y && \
     rm -rf /root/.cache/node-gyp /tmp/* && \
     npm cache clean --force
 
-# VNC plugin enabled by default in config
 ENV NODE_ENV=production
 ENV CAMOFOX_PORT=9377
 ENV NOVNC_PORT=6080
@@ -39,9 +39,7 @@ ENV ENABLE_VNC=1
 ENV VNC_PASSWORD=hermes
 ENV MAX_OLD_SPACE_SIZE=256
 ENV CAMOFOX_CRASH_REPORT_ENABLED=false
-# Chinese locale for browsing
 ENV TZ=Asia/Shanghai
 
 EXPOSE 9377 6080
-
 CMD ["sh", "-c", "node --max-old-space-size=${MAX_OLD_SPACE_SIZE:-256} /usr/local/lib/node_modules/@askjo/camofox-browser/server.js"]
