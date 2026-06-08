@@ -18,8 +18,9 @@ RUN apt-get update && apt-get install -y \
     ca-certificates curl unzip python3-minimal \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制自定义 VNC watcher（修复 Xvfb 检测 + x11vnc 崩溃恢复）
+# 复制自定义 VNC watcher 和 post-install 脚本
 COPY scripts/vnc-watcher.sh /tmp/vnc-watcher.sh
+COPY scripts/post-install.js /tmp/post-install.js
 
 # Install Camofox + 应用补丁
 RUN npm install -g only-allow@1.2.2 && \
@@ -35,8 +36,8 @@ RUN npm install -g only-allow@1.2.2 && \
     # fix: virtdisplay.js 的 stderr 输出不可见，改成 inherit 便于 debug
     sed -i 's/this.debug ? "inherit" : "ignore"/"inherit"/g' \
       /usr/local/lib/node_modules/@askjo/camofox-browser/node_modules/camoufox-js/dist/virtdisplay.js && \
-    # fix: browser 窗口在 VNC 里只有 10x10，resize 到全屏
-    sed -i 's/candidateBrowser = await firefox.launch(options);/candidateBrowser = await firefox.launch(options);\n      setTimeout(async () => {\n        try {\n          const pages = candidateBrowser.contexts()[0]?.pages();\n          if (pages?.length) await pages[0].setViewportSize({ width: 1920, height: 1080 });\n        } catch(e) {}\n        try {\n          const { execSync } = require("child_process");\n          execSync("xdotool search --name Camoufox windowmove 0 0 windowsize 1920 1080", { env: { DISPLAY: vdDisplay }, shell: true });\n        } catch(e) {}\n      }, 5000);/' \
+    # fix: browser 窗口 resize（独立脚本，避免 sed 内嵌换行符问题）
+    node /tmp/post-install.js && \
     # 安装 VNC watcher
     cp /tmp/vnc-watcher.sh /usr/local/lib/node_modules/@askjo/camofox-browser/plugins/vnc/vnc-watcher.sh && \
     chmod +x /usr/local/lib/node_modules/@askjo/camofox-browser/plugins/vnc/vnc-watcher.sh && \
