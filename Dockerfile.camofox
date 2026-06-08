@@ -26,9 +26,15 @@ RUN npm install -g only-allow@1.2.2 && \
     npm install -g @askjo/camofox-browser@1.11.2 && \
     sed -i 's/vdDisplay = localVirtualDisplay.get()/vdDisplay = await localVirtualDisplay.get()/' \
       /usr/local/lib/node_modules/@askjo/camofox-browser/server.js && \
-    # 启用 VNC plugin（默认 disabled，需手动改 config.json）
+    # 启用 VNC plugin（默认 disabled）
     sed -i 's/"vnc": {\s*"enabled": false/"vnc": {"enabled": true/' \
       /usr/local/lib/node_modules/@askjo/camofox-browser/camofox.config.json && \
+    # fix: Xvfb 要求 WxHxD 格式，config 里只有 WxH
+    sed -i 's/"resolution": "1920x1080"/"resolution": "1920x1080x24"/' \
+      /usr/local/lib/node_modules/@askjo/camofox-browser/camofox.config.json && \
+    # fix: virtdisplay.js 的 stderr 输出不可见，改成 inherit 便于 debug
+    sed -i 's/this.debug ? "inherit" : "ignore"/"inherit"/g' \
+      /usr/local/lib/node_modules/@askjo/camofox-browser/node_modules/camoufox-js/dist/virtdisplay.js && \
     # 安装 VNC watcher
     cp /tmp/vnc-watcher.sh /usr/local/lib/node_modules/@askjo/camofox-browser/plugins/vnc/vnc-watcher.sh && \
     chmod +x /usr/local/lib/node_modules/@askjo/camofox-browser/plugins/vnc/vnc-watcher.sh && \
