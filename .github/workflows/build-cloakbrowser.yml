@@ -12,6 +12,7 @@ on:
     paths:
       - 'Dockerfile.cloakbrowser'
       - 'scripts/cloakbrowser-entrypoint.sh'
+      - 'scripts/cdp-proxy.conf'
       - '.github/workflows/build-cloakbrowser.yml'
 
 env:

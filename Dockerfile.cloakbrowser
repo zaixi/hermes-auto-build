@@ -3,10 +3,14 @@ FROM cloakhq/cloakbrowser:latest
 LABEL maintainer="liyujiang"
 LABEL description="CloakBrowser with VNC/noVNC — stealth Chromium that you can see and control"
 
-# Install VNC components
+# Install VNC components + nginx (CDP reverse proxy)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    x11vnc novnc websockify python3-websockify \
-    && rm -rf /var/lib/apt/lists/*
+    x11vnc novnc websockify python3-websockify nginx-full \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /etc/nginx/sites-enabled/default
+
+# CDP reverse proxy config (Host header rewrite + response body sub_filter)
+COPY scripts/cdp-proxy.conf /etc/nginx/conf.d/cdp-proxy.conf
 
 # Copy custom entrypoint (starts Chrome directly, not via cloakserve)
 COPY scripts/cloakbrowser-entrypoint.sh /entrypoint.sh
@@ -15,10 +19,11 @@ RUN chmod +x /entrypoint.sh
 ENV VNC_PASSWORD=hermes
 ENV VNC_PORT=5900
 ENV NOVNC_PORT=8080
+ENV CDP_PORT=5101
 ENV DISPLAY=:99
 ENV TZ=Asia/Shanghai
 ENV CLOAKSERVE_DATA_DIR=/root/.cloakbrowser/data
 
-EXPOSE 8080 5900
+EXPOSE 8080 5900 5101
 
 ENTRYPOINT ["/entrypoint.sh"]

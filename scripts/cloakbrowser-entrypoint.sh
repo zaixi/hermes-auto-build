@@ -30,7 +30,7 @@ PROFILE_DIR="$DATA_DIR/__default__"
 # Clean up stale Chrome locks from previous runs
 rm -f "$PROFILE_DIR"/Singleton* "$PROFILE_DIR"/Lock 2>/dev/null
 
-# Start Chrome directly with CDP
+# Start Chrome directly with CDP (bound to 127.0.0.1 only — nginx proxy handles external)
 CHROME_BIN="/root/.cloakbrowser/chromium-146.0.7680.177.5/chrome"
 export DISPLAY=:99
 
@@ -56,6 +56,20 @@ echo "Chrome started (PID=$CHROME_PID)"
 for i in $(seq 1 30); do
   if curl -s http://127.0.0.1:5100/json/version >/dev/null 2>&1; then
     echo "Chrome CDP ready on port 5100"
+    break
+  fi
+  sleep 1
+done
+
+# Start nginx CDP proxy (port 5101 → Chrome port 5100 with Host header rewrite)
+# This replaces socat — nginx handles Host header + WebSocket URL rewriting
+CDP_PORT="${CDP_PORT:-5101}"
+echo "Starting nginx CDP proxy on port $CDP_PORT..."
+nginx -c /etc/nginx/nginx.conf 2>/dev/null
+# Verify nginx is listening
+for i in $(seq 1 5); do
+  if curl -s http://127.0.0.1:"$CDP_PORT"/json/version >/dev/null 2>&1; then
+    echo "nginx CDP proxy ready on port $CDP_PORT"
     break
   fi
   sleep 1
