@@ -9,7 +9,7 @@ Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp &
 sleep 1
 
 # Create VNC password file
-mkdir -p /tmp/.vnc
+mkdir -p /tmp/.vnc 2>/dev/null
 VNC_PASS="${VNC_PASSWORD:-hermes}"
 x11vnc -storepasswd "$VNC_PASS" /tmp/.vnc/passwd >/dev/null 2>&1
 
@@ -22,11 +22,50 @@ x11vnc -display :99 -forever -shared -rfbport "$VNC_PORT" \
 NOVNC_PORT="${NOVNC_PORT:-8080}"
 websockify --web /usr/share/novnc "$NOVNC_PORT" 127.0.0.1:"$VNC_PORT" >/var/log/novnc.log 2>&1 &
 
-# Extra: resize Chromium window after it starts (use xdotool polling)
+# Determine persistent data directory
+DATA_DIR="${CLOAKSERVE_DATA_DIR:-/root/.cloakbrowser/data}"
+mkdir -p "$DATA_DIR"
+PROFILE_DIR="$DATA_DIR/__default__"
+
+# Clean up stale Chrome locks from previous runs
+rm -f "$PROFILE_DIR"/Singleton* "$PROFILE_DIR"/Lock 2>/dev/null
+
+# Start Chrome directly with CDP
+CHROME_BIN="/root/.cloakbrowser/chromium-146.0.7680.177.5/chrome"
+export DISPLAY=:99
+
+"$CHROME_BIN" \
+  --no-sandbox \
+  --no-first-run \
+  --no-default-browser-check \
+  --disable-dev-shm-usage \
+  --disable-extensions \
+  --disable-popup-blocking \
+  --disable-background-networking \
+  --metrics-recording-only \
+  --ignore-gpu-blocklist \
+  --remote-debugging-port=5100 \
+  --remote-debugging-address=127.0.0.1 \
+  --user-data-dir="$PROFILE_DIR" \
+  > /dev/null 2>&1 &
+
+CHROME_PID=$!
+echo "Chrome started (PID=$CHROME_PID)"
+
+# Wait for Chrome CDP to be ready
+for i in $(seq 1 30); do
+  if curl -s http://127.0.0.1:5100/json/version >/dev/null 2>&1; then
+    echo "Chrome CDP ready on port 5100"
+    break
+  fi
+  sleep 1
+done
+
+# Auto-resize Chrome window
 (
   for i in $(seq 1 20); do
     sleep 2
-    WID=$(xdotool search --name "Chrom\|cloak\|Navigator" 2>/dev/null | head -1)
+    WID=$(xdotool search --name "Chrom\|New Tab\|what" 2>/dev/null | head -1)
     if [ -n "$WID" ]; then
       xdotool windowmove "$WID" 0 0 2>/dev/null
       xdotool windowsize "$WID" 1920 1080 2>/dev/null
@@ -35,5 +74,5 @@ websockify --web /usr/share/novnc "$NOVNC_PORT" 127.0.0.1:"$VNC_PORT" >/var/log/
   done
 ) &
 
-# Run user command (typically cloakserve)
-exec "$@"
+# Keep container running (wait for Chrome to exit)
+wait $CHROME_PID
