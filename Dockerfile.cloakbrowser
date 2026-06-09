@@ -1,0 +1,24 @@
+FROM cloakhq/cloakbrowser:latest
+
+LABEL maintainer="liyujiang"
+LABEL description="CloakBrowser with VNC/noVNC — stealth Chromium that you can see and control"
+
+# Install VNC components
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    x11vnc novnc websockify python3-websockify \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy custom entrypoint with VNC support
+COPY scripts/cloakbrowser-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV VNC_PASSWORD=hermes
+ENV VNC_PORT=5900
+ENV NOVNC_PORT=8080
+ENV DISPLAY=:99
+ENV TZ=Asia/Shanghai
+
+EXPOSE 8080 9222 5900
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["cloakserve"]
