@@ -8,11 +8,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11vnc novnc websockify python3-websockify \
     && rm -rf /var/lib/apt/lists/*
 
-# Patch cloakserve to support CLOAKSERVE_DATA_DIR env var
+# Patch cloakserve to support CLOAKSERVE_DATA_DIR env var + fix for root in Docker
 RUN python3 -c "
 import re
 with open('/usr/local/bin/cloakserve', 'r') as f:
     content = f.read()
+# Add CLOAKSERVE_DATA_DIR env var support
 old = '''def _default_data_dir() -> str:
     \"\"\"Smart default: container \u2192 /tmp/cloakserve, bare metal \u2192 ~/.cloakbrowser/cloakserve.\"\"\"
     if os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv'):
@@ -27,9 +28,19 @@ new = '''def _default_data_dir() -> str:
         return '/tmp/cloakserve'
     return str(Path.home() / '.cloakbrowser' / 'cloakserve')'''
 content = content.replace(old, new)
+# Add --no-sandbox for root-in-Docker
+content = content.replace(
+    'BASE_CHROME_ARGS = [',
+    'BASE_CHROME_ARGS = [\n    \"--no-sandbox\",'
+)
+# Increase CDP wait timeout for slow devices (QNAP)
+content = content.replace(
+    'timeout: float = 10.0',
+    'timeout: float = 30.0'
+)
 with open('/usr/local/bin/cloakserve', 'w') as f:
     f.write(content)
-print('Patched cloakserve with CLOAKSERVE_DATA_DIR support')
+print('Patched cloakserve: CLOAKSERVE_DATA_DIR, --no-sandbox, 30s CDP timeout')
 "
 
 # Copy custom entrypoint with VNC support
