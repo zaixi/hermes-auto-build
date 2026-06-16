@@ -49,60 +49,54 @@ jobs:
                   print(f'  [warn] Docker Hub API error: {e}', flush=True)
                   return None
 
-          # 1. Get upstream latest tag info
-          print(f'Checking upstream: {UPSTREAM_IMAGE}:latest', flush=True)
-          main_tag = docker_hub_get(f'/repositories/{UPSTREAM_IMAGE}/tags/latest')
-          if not main_tag:
-              print('  Failed to get upstream latest tag, forcing build', flush=True)
+          # 1. Get ALL date tags from upstream, newest first
+          print(f'Checking upstream: {UPSTREAM_IMAGE}', flush=True)
+          all_tags = docker_hub_get(
+              f'/repositories/{UPSTREAM_IMAGE}/tags?page_size=200'
+          )
+          if not all_tags or 'results' not in all_tags:
+              print('  Failed to get upstream tags, forcing build', flush=True)
               today = datetime.date.today().strftime('v%Y.%-m.%-d')
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write(f'should_build=true\nupstream_tag={today}\n')
               exit(0)
 
-          main_digest = main_tag.get('digest', '')
-          print(f'  Digest: {main_digest[:30]}...', flush=True)
-
-          # Find the date version tag matching latest's digest (e.g. v2026.5.29)
-          all_tags = docker_hub_get(
-              f'/repositories/{UPSTREAM_IMAGE}/tags?page_size=200'
+          # Collect all date tags, sorted newest first
+          date_tags = sorted(
+              [t for t in all_tags['results']
+               if re.match(r'^v\d{4}\.\d{1,2}\.\d{1,2}$', t.get('name', ''))],
+              key=lambda t: t['name'],
+              reverse=True
           )
+          print(f'  Found {len(date_tags)} date tags on upstream', flush=True)
+
+          # Find the first date tag we haven't built yet
           upstream_tag = ''
-          if all_tags and 'results' in all_tags:
-              for t in all_tags['results']:
-                  tname = t.get('name', '')
-                  if t.get('digest') == main_digest and re.match(r'^v\d{4}\.\d{1,2}\.\d{1,2}$', tname):
-                      upstream_tag = tname
-                      break
+          for t in date_tags:
+              tname = t['name']
+              our_tag = docker_hub_get(
+                  f'/repositories/{IMAGE_NAME}/tags/{tname}'
+              )
+              if not our_tag:
+                  upstream_tag = tname
+                  print(f'  New upstream version: {upstream_tag}', flush=True)
+                  break
+              else:
+                  print(f'  Already built: {tname}', flush=True)
 
           if not upstream_tag:
-              # Fallback: use today's date
-              today = datetime.date.today().strftime('v%Y.%-m.%-d')
-              upstream_tag = today
-              print(f'  No date tag found on upstream, using today: {upstream_tag}', flush=True)
-          else:
-              print(f'  Found date tag: {upstream_tag}', flush=True)
+              # Force mode: always build (skip version check)
+              if FORCE == 'true':
+                  today = datetime.date.today().strftime('v%Y.%-m.%-d')
+                  print(f'Force build enabled, using today: {today}', flush=True)
+                  with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                      f.write(f'should_build=true\nupstream_tag={today}\n')
+                  exit(0)
 
-          # 2. Force build check — always builds even if already built
-          if FORCE == 'true':
-              print('Force build enabled', flush=True)
+              print('  No new upstream version, skipping', flush=True)
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f'should_build=true\nupstream_tag={upstream_tag}\n')
+                  f.write(f'should_build=false\nupstream_tag=\n')
               exit(0)
-
-          # 3. Optional: skip if we already built this date tag
-          print(f'Checking existing build: {IMAGE_NAME}:{upstream_tag}', flush=True)
-          our_tag = docker_hub_get(
-              f'/repositories/{IMAGE_NAME}/tags/{upstream_tag}'
-          )
-
-          if our_tag:
-              print(f'  Already built for {upstream_tag}, skipping', flush=True)
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f'should_build=false\nupstream_tag={upstream_tag}\n')
-          else:
-              print(f'  New version detected, building...', flush=True)
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f'should_build=true\nupstream_tag={upstream_tag}\n')
           PYEOF
 
   build:
