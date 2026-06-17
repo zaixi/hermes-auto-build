@@ -65,7 +65,7 @@ jobs:
           date_tags = sorted(
               [t for t in all_tags['results']
                if re.match(r'^v\d{4}\.\d{1,2}\.\d{1,2}$', t.get('name', ''))],
-              key=lambda t: t['name'],
+              key=lambda t: tuple(int(p) for p in t['name'].lstrip('v').split('.')),
               reverse=True
           )
           print(f'  Found {len(date_tags)} date tags on upstream', flush=True)
