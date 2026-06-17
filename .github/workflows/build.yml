@@ -97,6 +97,12 @@ jobs:
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                   f.write(f'should_build=false\nupstream_tag=\n')
               exit(0)
+
+          # When a new version was found, write the outputs
+          if upstream_tag:
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write(f'should_build=true\nupstream_tag={upstream_tag}\n')
+              exit(0)
           PYEOF
 
   build:
