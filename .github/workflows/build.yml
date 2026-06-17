@@ -21,6 +21,7 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       upstream_tag: ${{ steps.check.outputs.upstream_tag }}
+      is_newest: ${{ steps.check.outputs.is_newest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,7 +59,7 @@ jobs:
               print('  Failed to get upstream tags, forcing build', flush=True)
               today = datetime.date.today().strftime('v%Y.%-m.%-d')
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f'should_build=true\nupstream_tag={today}\n')
+                  f.write(f'should_build=true\nupstream_tag={today}\nis_newest=true\n')
               exit(0)
 
           # Collect all date tags, sorted newest first
@@ -90,7 +91,7 @@ jobs:
                   today = datetime.date.today().strftime('v%Y.%-m.%-d')
                   print(f'Force build enabled, using today: {today}', flush=True)
                   with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                      f.write(f'should_build=true\nupstream_tag={today}\n')
+                      f.write(f'should_build=true\nupstream_tag={today}\nis_newest=true\n')
                   exit(0)
 
               print('  No new upstream version, skipping', flush=True)
@@ -100,8 +101,9 @@ jobs:
 
           # When a new version was found, write the outputs
           if upstream_tag:
+              is_newest = upstream_tag == date_tags[0]['name']
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f'should_build=true\nupstream_tag={upstream_tag}\n')
+                  f.write(f'should_build=true\nupstream_tag={upstream_tag}\nis_newest={str(is_newest).lower()}\n')
               exit(0)
           PYEOF
 
@@ -122,13 +124,29 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push (newest — also push latest)
+        if: needs.check.outputs.is_newest == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
+          build-args: |
+            BASE_TAG=${{ needs.check.outputs.upstream_tag }}
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check.outputs.upstream_tag }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to: type=inline
+
+      - name: Build and push (gap fill — only version tag)
+        if: needs.check.outputs.is_newest != 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          build-args: |
+            BASE_TAG=${{ needs.check.outputs.upstream_tag }}
+          push: true
+          tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check.outputs.upstream_tag }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           cache-to: type=inline

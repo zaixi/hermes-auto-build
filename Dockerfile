@@ -1,4 +1,5 @@
-FROM nousresearch/hermes-agent:latest
+ARG BASE_TAG=latest
+FROM nousresearch/hermes-agent:${BASE_TAG}
 
 # Ensure venv bin is on PATH for all processes (gateway, terminal, sandbox)
 ENV PATH="/opt/hermes/.venv/bin:${PATH}"
