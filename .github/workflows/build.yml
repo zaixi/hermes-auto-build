@@ -71,10 +71,17 @@ jobs:
           )
           print(f'  Found {len(date_tags)} date tags on upstream', flush=True)
 
+          # Minimum version to attempt building (older base images incompatible)
+          MIN_VERSION = (2026, 4, 30)
+
           # Find the first date tag we haven't built yet
           upstream_tag = ''
           for t in date_tags:
               tname = t['name']
+              tver = tuple(int(p) for p in tname.lstrip('v').split('.'))
+              if tver < MIN_VERSION:
+                  print(f'  Skipping {tname}: too old to build (base image incompatible)', flush=True)
+                  continue
               our_tag = docker_hub_get(
                   f'/repositories/{IMAGE_NAME}/tags/{tname}'
               )
