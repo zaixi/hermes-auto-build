@@ -32,7 +32,7 @@ jobs:
           FORCE_MODE: ${{ inputs.force || github.event.inputs.force || '' }}
         run: |
           python3 << 'PYEOF'
-          import urllib.request, json, os, re, datetime
+          import urllib.request, json, os, re
 
           UPSTREAM_IMAGE = os.environ['UPSTREAM_IMAGE']
           IMAGE_NAME = os.environ['IMAGE_NAME']
@@ -56,10 +56,9 @@ jobs:
               f'/repositories/{UPSTREAM_IMAGE}/tags?page_size=200'
           )
           if not all_tags or 'results' not in all_tags:
-              print('  Failed to get upstream tags, forcing build', flush=True)
-              today = datetime.date.today().strftime('v%Y.%-m.%-d')
+              print('  Failed to get upstream tags, cannot build without a known base', flush=True)
               with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f'should_build=true\nupstream_tag={today}\nis_newest=true\n')
+                  f.write(f'should_build=false\nupstream_tag=\n')
               exit(0)
 
           # Collect all date tags, sorted newest first
@@ -93,12 +92,12 @@ jobs:
                   print(f'  Already built: {tname}', flush=True)
 
           if not upstream_tag:
-              # Force mode: always build (skip version check)
+              # Force mode: always build (skip version check), use latest upstream tag
               if FORCE == 'true':
-                  today = datetime.date.today().strftime('v%Y.%-m.%-d')
-                  print(f'Force build enabled, using today: {today}', flush=True)
+                  latest = date_tags[0]['name']
+                  print(f'Force build enabled, using latest upstream: {latest}', flush=True)
                   with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                      f.write(f'should_build=true\nupstream_tag={today}\nis_newest=true\n')
+                      f.write(f'should_build=true\nupstream_tag={latest}\nis_newest=true\n')
                   exit(0)
 
               print('  No new upstream version, skipping', flush=True)
