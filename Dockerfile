@@ -29,9 +29,13 @@ RUN curl -fsSL \
         shellcheck-v0.10.0/shellcheck && \
     chmod +x /usr/local/bin/shellcheck
 
-# Install feishu, hindsight, and rtk-hermes plugin dependencies
+# Install feishu, hindsight, and rtk-hermes plugin dependencies.
+# NOTE: lark-oapi is intentionally NOT pinned here — the official image
+# lazy-installs it at first use (tools/lazy_deps.py: platform.feishu →
+# lark-oapi==1.6.8). Pre-installing an older version here short-circuits
+# that mechanism (FEISHU_AVAILABLE=True → version check never runs) and
+# breaks the WS client (extra_ua_tags param requires lark-oapi>=1.6.x).
 RUN uv pip install --no-cache-dir \
-    "lark-oapi==1.5.3" \
     "qrcode==7.4.2" \
     "hindsight-client" \
     "rtk-hermes" \
