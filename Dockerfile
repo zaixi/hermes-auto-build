@@ -47,8 +47,11 @@ ENV RTK_INSTALL_DIR=/usr/local/bin
 RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 
 # agent-browser (browser_navigate) + Chromium, and Lark/Feishu CLI
-RUN npm install -g agent-browser @larksuite/cli && \
-    agent-browser install --with-deps && \
+# npm 11+ blocks postinstall scripts by default — allow them explicitly.
+# Chrome system deps are already covered by the chromium apt package above,
+# so --with-deps (which needs sudo, absent in base image) is unnecessary.
+RUN npm install -g --allow-scripts=@larksuite/cli,agent-browser agent-browser @larksuite/cli && \
+    agent-browser install && \
     rm -rf /tmp/* /root/.npm /root/.cache /tmp/.npm
 
 # Custom skills — synced to volume by entrypoint's skills_sync.py
