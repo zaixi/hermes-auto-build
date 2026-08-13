@@ -35,12 +35,16 @@ RUN curl -fsSL \
 # lark-oapi==1.6.8). Pre-installing an older version here short-circuits
 # that mechanism (FEISHU_AVAILABLE=True → version check never runs) and
 # breaks the WS client (extra_ua_tags param requires lark-oapi>=1.6.x).
+# pandas + openpyxl: whp profile financial work (salary allocation / expense
+# reports / monthly reports). Pinned to avoid silent upstream breakage.
 RUN uv pip install --no-cache-dir \
     "qrcode==7.4.2" \
     "hindsight-client" \
     "rtk-hermes" \
     "aiohttp" \
-    "httpx"
+    "httpx" \
+    "pandas==3.0.5" \
+    "openpyxl==3.1.5"
 
 # RTK (Rust Token Killer) — CLI output compressor, auto-latest
 ENV RTK_INSTALL_DIR=/usr/local/bin
