@@ -11,11 +11,13 @@ RUN mkdir -p /etc/profile.d && \
     echo 'export PATH="/opt/hermes/.venv/bin:$PATH"' > /etc/profile.d/hermes-path.sh
 
 # Install additional apt packages
+# file: agent 识别文件类型（whp 2026-08-21 曾因缺 file 报 command not found）
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         jq \
         unzip \
         diffutils \
+        file \
         socat \
         zip \
         chromium && \
