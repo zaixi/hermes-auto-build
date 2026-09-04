@@ -39,6 +39,9 @@ RUN curl -fsSL \
 # breaks the WS client (extra_ua_tags param requires lark-oapi>=1.6.x).
 # pandas + openpyxl: whp profile financial work (salary allocation / expense
 # reports / monthly reports). Pinned to avoid silent upstream breakage.
+# hermes-keenable-web: Keenable search+extract provider (replaces tavily,
+# removed upstream in v0.21. KEENABLE_API_KEY in .env, 100K free req/mo).
+# 2026-09-04 extract backend switched from tavily -> keenable.
 RUN uv pip install --no-cache-dir \
     "qrcode==7.4.2" \
     "hindsight-client" \
@@ -46,7 +49,8 @@ RUN uv pip install --no-cache-dir \
     "aiohttp" \
     "httpx" \
     "pandas==3.0.5" \
-    "openpyxl==3.1.5"
+    "openpyxl==3.1.5" \
+    "hermes-keenable-web==0.1.1"
 
 # RTK (Rust Token Killer) — CLI output compressor, auto-latest
 ENV RTK_INSTALL_DIR=/usr/local/bin
