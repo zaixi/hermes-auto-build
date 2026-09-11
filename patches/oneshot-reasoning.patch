@@ -1,0 +1,85 @@
+diff --git a/hermes_cli/main.py b/hermes_cli/main.py
+--- a/hermes_cli/main.py
++++ b/hermes_cli/main.py
+@@ -137,6 +137,7 @@ def _run_and_exit_oneshot(
+     *,
+     model: object = None,
+     provider: object = None,
++    reasoning: object = None,
+     toolsets: object = None,
+     skills: object = None,
+     usage_file: object = None,
+@@ -148,6 +149,7 @@ def _run_and_exit_oneshot(
+             prompt,
+             model=model,
+             provider=provider,
++            reasoning=reasoning,
+             toolsets=toolsets,
+             skills=skills,
+             usage_file=usage_file,
+@@ -2883,6 +2885,7 @@ def _run_oneshot_from_args(args) -> None:
+         args.oneshot,
+         model=getattr(args, "model", None),
+         provider=getattr(args, "provider", None),
++        reasoning=getattr(args, "reasoning", None),
+         toolsets=getattr(args, "toolsets", None),
+         skills=getattr(args, "skills", None),
+         usage_file=getattr(args, "usage_file", None),
+diff --git a/hermes_cli/oneshot.py b/hermes_cli/oneshot.py
+--- a/hermes_cli/oneshot.py
++++ b/hermes_cli/oneshot.py
+@@ -167,6 +167,7 @@ def run_oneshot(
+     toolsets: object = None,
+     skills: object = None,
+     usage_file: Optional[str] = None,
++    reasoning: Optional[str] = None,
+ ) -> int:
+     """Execute a single prompt and print only the final content block.
+ 
+@@ -217,6 +218,7 @@ def run_oneshot(
+                 prompt,
+                 model=model,
+                 provider=provider,
++                reasoning=reasoning,
+                 toolsets=explicit_toolsets,
+                 use_config_toolsets=use_config_toolsets,
+                 skills=skills,
+@@ -347,6 +349,7 @@ def _run_agent(
+     toolsets: object = None,
+     use_config_toolsets: bool = True,
+     skills: object = None,
++    reasoning: Optional[str] = None,
+ ) -> tuple[str, dict]:
+     """Build an AIAgent exactly like a normal CLI chat turn, run one conversation, and return
+     ``(final_response, run_result)``. Imports are local to keep CLI startup cheap."""
+@@ -363,6 +366,22 @@ def _run_agent(
+         explicit_base_url=choice.base_url,
+         explicit_api_key=choice.api_key,
+     )
++
++    # Oneshot bypasses HermesCLI, so it must resolve the configured effort
++    # itself. An explicit CLI value wins for this invocation only, matching
++    # the normal chat path without mutating config.yaml.
++    from hermes_constants import parse_reasoning_effort, resolve_reasoning_config
++
++    reasoning_config = resolve_reasoning_config(cfg, choice.model)
++    if reasoning is not None and str(reasoning).strip():
++        parsed_reasoning = parse_reasoning_effort(reasoning)
++        if parsed_reasoning is None:
++            logging.warning(
++                "Unknown --reasoning '%s', keeping the configured level",
++                reasoning,
++            )
++        else:
++            reasoning_config = parsed_reasoning
+ 
+     # sorted() gives stable ordering for config-derived sets; explicit values preserve user order.
+     toolsets_list = _normalize_toolsets(toolsets)
+@@ -400,6 +419,7 @@ def _run_agent(
+             credential_pool=runtime.get("credential_pool"),
+             fallback_model=get_fallback_chain(cfg) or None,
+             ephemeral_system_prompt=skills_prompt,
++            reasoning_config=reasoning_config,
+             # The only interactive callback wired: no user sits at a terminal. Sudo prompts gate on
+             # HERMES_INTERACTIVE (never set), hook approval via HERMES_ACCEPT_HOOKS=1, dangerous
+             # commands via HERMES_YOLO_MODE=1, skill secret capture degrades gracefully.

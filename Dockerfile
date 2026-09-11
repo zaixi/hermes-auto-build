@@ -17,6 +17,7 @@ RUN apt-get update && \
         jq \
         unzip \
         diffutils \
+        patch \
         file \
         socat \
         zip \
@@ -63,6 +64,27 @@ RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/in
 RUN npm install -g --allow-scripts=@larksuite/cli,agent-browser agent-browser @larksuite/cli && \
     agent-browser install && \
     rm -rf /tmp/* /root/.npm /root/.cache /tmp/.npm
+
+# Backport upstream one-shot reasoning plumbing (#99523 / merge 2ddeba9e).
+# v0.21.1 drops --reasoning/config reasoning before AIAgent construction in
+# `hermes -z`, so DeepSeek silently falls back to the provider default.
+# Fail closed on a partial/upstream-incompatible state; once upstream ships
+# both markers, this layer becomes an idempotent no-op and can be removed.
+COPY patches/oneshot-reasoning.patch /tmp/oneshot-reasoning.patch
+RUN main_marker=$(grep -Fc 'reasoning=getattr(args, "reasoning", None)' /opt/hermes/hermes_cli/main.py || true) && \
+    agent_marker=$(grep -Fc 'reasoning_config=reasoning_config' /opt/hermes/hermes_cli/oneshot.py || true) && \
+    if [ "$main_marker" -gt 0 ] && [ "$agent_marker" -gt 0 ]; then \
+        echo 'One-shot reasoning plumbing already present upstream; skipping hotfix'; \
+    elif [ "$main_marker" -eq 0 ] && [ "$agent_marker" -eq 0 ]; then \
+        patch --batch --forward -d /opt/hermes -p1 < /tmp/oneshot-reasoning.patch; \
+    else \
+        echo 'Partial one-shot reasoning implementation detected; refusing unsafe build' >&2; \
+        exit 1; \
+    fi && \
+    /opt/hermes/.venv/bin/python -m py_compile \
+        /opt/hermes/hermes_cli/main.py \
+        /opt/hermes/hermes_cli/oneshot.py && \
+    rm -f /tmp/oneshot-reasoning.patch
 
 # Custom skills — synced to volume by entrypoint's skills_sync.py
 COPY skills /opt/hermes/skills/
