@@ -32,7 +32,7 @@ RUN curl -fsSL \
         shellcheck-v0.10.0/shellcheck && \
     chmod +x /usr/local/bin/shellcheck
 
-# Install feishu, hindsight, and rtk-hermes plugin dependencies.
+# Install feishu and hindsight dependencies.
 # NOTE: lark-oapi is intentionally NOT pinned here — the official image
 # lazy-installs it at first use (tools/lazy_deps.py: platform.feishu →
 # lark-oapi==1.6.8). Pre-installing an older version here short-circuits
@@ -46,16 +46,11 @@ RUN curl -fsSL \
 RUN uv pip install --no-cache-dir \
     "qrcode==7.4.2" \
     "hindsight-client" \
-    "rtk-hermes" \
     "aiohttp" \
     "httpx" \
     "pandas==3.0.5" \
     "openpyxl==3.1.5" \
     "hermes-keenable-web==0.1.1"
-
-# RTK (Rust Token Killer) — CLI output compressor, auto-latest
-ENV RTK_INSTALL_DIR=/usr/local/bin
-RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 
 # agent-browser (browser_navigate) + Chromium, and Lark/Feishu CLI
 # npm 11+ blocks postinstall scripts by default — allow them explicitly.
