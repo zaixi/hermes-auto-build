@@ -81,5 +81,21 @@ RUN main_marker=$(grep -Fc 'reasoning=getattr(args, "reasoning", None)' /opt/her
         /opt/hermes/hermes_cli/oneshot.py && \
     rm -f /tmp/oneshot-reasoning.patch
 
+# Backport upstream #62930 / #86417: a normal availability gate returning
+# False means an optional capability is off, not that its probe crashed.
+# Keep exceptions and recent-success flakes at WARNING; move steady-state
+# False verdicts to DEBUG so they do not flood Docker warning logs.
+COPY patches/apply_check_fn_false_debug.py /tmp/apply_check_fn_false_debug.py
+COPY tests/test_check_fn_false_log_level.py /tmp/test_check_fn_false_log_level.py
+RUN /opt/hermes/.venv/bin/python /tmp/apply_check_fn_false_debug.py \
+        /opt/hermes/tools/registry.py && \
+    /opt/hermes/.venv/bin/python -m py_compile \
+        /opt/hermes/tools/registry.py && \
+    HERMES_SOURCE_ROOT=/opt/hermes \
+        /opt/hermes/.venv/bin/python /tmp/test_check_fn_false_log_level.py && \
+    rm -f \
+        /tmp/apply_check_fn_false_debug.py \
+        /tmp/test_check_fn_false_log_level.py
+
 # Custom skills — synced to volume by entrypoint's skills_sync.py
 COPY skills /opt/hermes/skills/
