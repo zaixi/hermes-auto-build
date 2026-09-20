@@ -31,12 +31,18 @@ RUN curl -fsSL \
         shellcheck-v0.10.0/shellcheck && \
     chmod +x /usr/local/bin/shellcheck
 
-# Install feishu and hindsight dependencies.
-# NOTE: lark-oapi is intentionally NOT pinned here — the official image
-# lazy-installs it at first use (tools/lazy_deps.py: platform.feishu →
-# lark-oapi==1.6.8). Pre-installing an older version here short-circuits
-# that mechanism (FEISHU_AVAILABLE=True → version check never runs) and
-# breaks the WS client (extra_ua_tags param requires lark-oapi>=1.6.x).
+# Install feishu, tts and hindsight dependencies.
+# lark-oapi / edge-tts are pinned to the EXACT versions tools/lazy_deps.py
+# allowlists (platform.feishu → lark-oapi==1.6.8, tts.edge → edge-tts==7.2.7)
+# so the runtime lazy installer no-ops: lazy_deps.ensure() returns early once
+# _is_satisfied() sees an installed version inside the pinned range.
+# Baking them matters because /opt/data is an ANONYMOUS docker volume — the
+# lazy-packages store it holds is discarded with the old container on every
+# redeploy, so an unbaked lark-oapi/edge-tts is re-downloaded on each image
+# update (observed 5-8 lazy-install events per profile per week, 13-94s each).
+# Do NOT pin lark-oapi below 1.6.x: the feishu adapter passes extra_ua_tags to
+# the lark WS client and an older SDK raises TypeError (last seen 2026-08-03);
+# 1.6.8 is what this instance actually runs and is verified working.
 # pandas + openpyxl: whp profile financial work (salary allocation / expense
 # reports / monthly reports). Pinned to avoid silent upstream breakage.
 # hermes-keenable-web: Keenable search+extract provider (replaces tavily,
@@ -49,7 +55,9 @@ RUN uv pip install --no-cache-dir \
     "httpx" \
     "pandas==3.0.5" \
     "openpyxl==3.1.5" \
-    "hermes-keenable-web==0.1.1"
+    "hermes-keenable-web==0.1.1" \
+    "lark-oapi==1.6.8" \
+    "edge-tts==7.2.7"
 
 # agent-browser (browser_navigate) + Chromium, and Lark/Feishu CLI
 # npm 11+ blocks postinstall scripts by default — allow them explicitly.
