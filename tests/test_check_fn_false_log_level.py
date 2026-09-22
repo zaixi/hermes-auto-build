@@ -43,13 +43,14 @@ class CheckFnFalseLogLevelTest(unittest.TestCase):
     def _matching(self, label: str) -> list[logging.LogRecord]:
         return [r for r in self.capture.records if label in r.getMessage()]
 
-    def test_false_is_debug_and_still_unavailable(self) -> None:
+    def test_false_is_non_warning_and_still_unavailable(self) -> None:
         def optional_mode_gate() -> bool:
             return False
 
         self.assertFalse(_check_fn_cached(optional_mode_gate))
         records = self._matching("optional_mode_gate")
-        self.assertEqual([logging.DEBUG], [r.levelno for r in records])
+        self.assertEqual(1, len(records))
+        self.assertLess(records[0].levelno, logging.WARNING)
         self.assertIn("returned False", records[0].getMessage())
 
     def test_exception_stays_warning(self) -> None:

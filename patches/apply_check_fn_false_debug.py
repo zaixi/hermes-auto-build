@@ -29,6 +29,7 @@ NEW = '''        # A normal False verdict means an optional capability is unavai
 GLOBAL_FIX_MARKERS = (
     'logger.debug if outcome == "returned False" else logger.warning',
     'logger.info if outcome == "returned False" else logger.warning',
+    'log = logger.warning if exc_info else logger.info',
     'logger.warning if raised else logger.debug',
     'logger.warning if raised else logger.info',
 )
