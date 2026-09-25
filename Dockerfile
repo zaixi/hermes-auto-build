@@ -54,7 +54,7 @@ RUN curl -fsSL \
 # 2026-09-04 extract backend switched from tavily -> keenable.
 RUN uv pip install --no-cache-dir \
     "qrcode==7.4.2" \
-    "hindsight-client>=0.10.1,<1" \
+    "hindsight-client @ https://files.pythonhosted.org/packages/5b/9b/aef41711ea4ea419386a10d7b5b52cebd9aac380127897629508ddff12b9/hindsight_client-0.10.1-py3-none-any.whl#sha256=04e03353a0f9dcfa7b1b1000cccc8f077a93a788b27af62cc5e014b2dd3b960c" \
     "aiohttp" \
     "httpx" \
     "pandas==3.0.5" \
