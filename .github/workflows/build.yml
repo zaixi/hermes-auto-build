@@ -26,92 +26,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test upstream version detection
+        run: python3 -m unittest discover -s tests -p test_upstream_version.py -v
+
       - name: Check upstream version
         id: check
         env:
           FORCE_MODE: ${{ inputs.force || github.event.inputs.force || '' }}
-        run: |
-          python3 << 'PYEOF'
-          import urllib.request, json, os, re
-
-          UPSTREAM_IMAGE = os.environ['UPSTREAM_IMAGE']
-          IMAGE_NAME = os.environ['IMAGE_NAME']
-          FORCE = os.environ.get('FORCE_MODE', 'false').lower()
-
-          def docker_hub_get(path, headers=None):
-              req = urllib.request.Request(
-                  f'https://hub.docker.com/v2{path}',
-                  headers=headers or {'Accept': 'application/json'}
-              )
-              try:
-                  with urllib.request.urlopen(req, timeout=15) as r:
-                      return json.loads(r.read())
-              except Exception as e:
-                  print(f'  [warn] Docker Hub API error: {e}', flush=True)
-                  return None
-
-          # 1. Get ALL date tags from upstream, newest first
-          print(f'Checking upstream: {UPSTREAM_IMAGE}', flush=True)
-          all_tags = docker_hub_get(
-              f'/repositories/{UPSTREAM_IMAGE}/tags?page_size=200'
-          )
-          if not all_tags or 'results' not in all_tags:
-              print('  Failed to get upstream tags, cannot build without a known base', flush=True)
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f'should_build=false\nupstream_tag=\n')
-              exit(0)
-
-          # Collect all date tags, sorted newest first
-          date_tags = sorted(
-              [t for t in all_tags['results']
-               if re.match(r'^v\d{4}\.\d{1,2}\.\d{1,2}$', t.get('name', ''))],
-              key=lambda t: tuple(int(p) for p in t['name'].lstrip('v').split('.')),
-              reverse=True
-          )
-          print(f'  Found {len(date_tags)} date tags on upstream', flush=True)
-
-          # Minimum version to attempt building (older base images incompatible)
-          MIN_VERSION = (2026, 4, 30)
-
-          # Find the first date tag we haven't built yet
-          upstream_tag = ''
-          for t in date_tags:
-              tname = t['name']
-              tver = tuple(int(p) for p in tname.lstrip('v').split('.'))
-              if tver < MIN_VERSION:
-                  print(f'  Skipping {tname}: too old to build (base image incompatible)', flush=True)
-                  continue
-              our_tag = docker_hub_get(
-                  f'/repositories/{IMAGE_NAME}/tags/{tname}'
-              )
-              if not our_tag:
-                  upstream_tag = tname
-                  print(f'  New upstream version: {upstream_tag}', flush=True)
-                  break
-              else:
-                  print(f'  Already built: {tname}', flush=True)
-
-          if not upstream_tag:
-              # Force mode: always build (skip version check), use latest upstream tag
-              if FORCE == 'true':
-                  latest = date_tags[0]['name']
-                  print(f'Force build enabled, using latest upstream: {latest}', flush=True)
-                  with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                      f.write(f'should_build=true\nupstream_tag={latest}\nis_newest=true\n')
-                  exit(0)
-
-              print('  No new upstream version, skipping', flush=True)
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f'should_build=false\nupstream_tag=\n')
-              exit(0)
-
-          # When a new version was found, write the outputs
-          if upstream_tag:
-              is_newest = upstream_tag == date_tags[0]['name']
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write(f'should_build=true\nupstream_tag={upstream_tag}\nis_newest={str(is_newest).lower()}\n')
-              exit(0)
-          PYEOF
+        run: python3 scripts/check_upstream_version.py
 
   build:
     needs: check
