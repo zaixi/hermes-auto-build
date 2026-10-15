@@ -25,6 +25,10 @@
 
 编辑 [`Dockerfile`](./Dockerfile) 中的 `apt-get install` 行，按需增删包名。
 
+Python 自定义包维护在 [`requirements-custom.txt`](./requirements-custom.txt)：默认不锁定版本，仅保留插件要求的兼容范围。飞书、Edge TTS、Silk 的必要版本约束直接读取对应上游版本的声明，不在本仓库重复写死。
+
+PM 管理的新镜像会保留原有功能选择，重新解析依赖、构建环境并恢复官方源码绑定和命令入口；旧镜像继续使用其原有安装器。构建时会以普通用户、在源码目录之外检查包导入、Hermes CLI、XLSX 读写、Silk 编解码及中文字体，失败不会发布镜像。
+
 ### 4. 启用 Actions
 
 在仓库 Actions 页面启用 Workflow，然后手动触发一次构建。

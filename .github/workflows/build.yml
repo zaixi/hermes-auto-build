@@ -29,6 +29,9 @@ jobs:
       - name: Test upstream version detection
         run: python3 -m unittest discover -s tests -p test_upstream_version.py -v
 
+      - name: Test image dependency assembly
+        run: python3 -m unittest discover -s tests -p test_image_dependencies.py -v
+
       - name: Check upstream version
         id: check
         env:

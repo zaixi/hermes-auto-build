@@ -1,0 +1,7 @@
+# Custom tools follow available compatible releases; no unnecessary exact pins.
+pandas
+openpyxl
+hermes-keenable-web
+# Required API range declared by the installed Hindsight plugin.
+hindsight-client>=0.10.1,<1
+hindsight-embed>=0.10.1,<1

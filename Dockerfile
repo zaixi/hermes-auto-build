@@ -20,57 +20,45 @@ RUN apt-get update && \
         file \
         socat \
         zip \
-        chromium && \
+        shellcheck \
+        fonts-wqy-zenhei && \
+    if [ ! -s /etc/hermes/agent-browser-executable-path ]; then \
+        apt-get install -y --no-install-recommends chromium; \
+    fi && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install shellcheck (for bash-language-server LSP diagnostics)
-RUN curl -fsSL \
-    https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz \
-    | tar xJ -C /usr/local/bin --strip-components=1 \
-        shellcheck-v0.10.0/shellcheck && \
-    chmod +x /usr/local/bin/shellcheck
 
-# Install feishu, tts, silk-stt and hindsight dependencies.
-# lark-oapi / edge-tts / pilk are pinned to the EXACT versions
-# tools/lazy_deps.py allowlists (platform.feishu → lark-oapi==1.6.8,
-# tts.edge → edge-tts==7.2.7, stt.silk → pilk==0.2.4), so the runtime lazy
-# installer no-ops: lazy_deps.ensure() returns early once _is_satisfied()
-# sees an installed version inside the pinned range.
-# Baking matters because /opt/data is an ANONYMOUS docker volume — the
-# lazy-packages store it holds is discarded with the old container on every
-# redeploy, so an unbaked package is re-downloaded on each image update
-# (observed 5-8 lazy-install events per profile per week, 13-94s each).
-# pilk ships no manylinux wheel (Windows wheels + sdist only), so it is built
-# from source here; the base image carries gcc and Python.h
-# (/usr/include/python3.13, venv python is /usr/bin/python3.13).
-# Do NOT pin lark-oapi below 1.6.x: the feishu adapter passes extra_ua_tags to
-# the lark WS client and an older SDK raises TypeError (last seen 2026-08-03);
-# 1.6.8 is what this instance actually runs and is verified working.
-# pandas + openpyxl: whp profile financial work (salary allocation / expense
-# reports / monthly reports). Pinned to avoid silent upstream breakage.
-# hermes-keenable-web: Keenable search+extract provider (replaces tavily,
-# removed upstream in v0.21. KEENABLE_API_KEY in .env, 100K free req/mo).
-# 2026-09-04 extract backend switched from tavily -> keenable.
-RUN uv pip install --no-cache-dir \
-    "qrcode==7.4.2" \
-    "hindsight-client @ https://files.pythonhosted.org/packages/5b/9b/aef41711ea4ea419386a10d7b5b52cebd9aac380127897629508ddff12b9/hindsight_client-0.10.1-py3-none-any.whl#sha256=04e03353a0f9dcfa7b1b1000cccc8f077a93a788b27af62cc5e014b2dd3b960c" \
-    "aiohttp" \
-    "httpx" \
-    "pandas==3.0.5" \
-    "openpyxl==3.1.5" \
-    "hermes-keenable-web==0.1.1" \
-    "lark-oapi==1.6.8" \
-    "edge-tts==7.2.7" \
-    "pilk==0.2.4"
+# Install Feishu, Edge TTS and Silk through their upstream extras. Their exact
+# versions are compatibility requirements owned by Hermes, not custom pins.
+# All other custom packages are unpinned except Hindsight's plugin API bounds.
+# Modern images are PM-owned/sealed: extend their declared selection and lock
+# through the official build API so a later boot cannot silently drop our deps.
+# pilk has no Linux wheel: the upstream image's compiler + interpreter headers
+# build it here; do not assume the base interpreter remains Python 3.13.
+COPY requirements-custom.txt /opt/hermes/requirements-custom.txt
+COPY scripts/install_image_dependencies.py /tmp/install_image_dependencies.py
+RUN if [ -x /usr/local/bin/python3 ]; then \
+        build_python=/usr/local/bin/python3; \
+    else build_python=python3; fi && \
+    "$build_python" /tmp/install_image_dependencies.py \
+        --source /opt/hermes --requirements /opt/hermes/requirements-custom.txt && \
+    rm /tmp/install_image_dependencies.py
 
-# agent-browser (browser_navigate) + Chromium, and Lark/Feishu CLI
-# npm 11+ blocks postinstall scripts by default — allow them explicitly.
-# Chrome system deps are already covered by the chromium apt package above,
-# so --with-deps (which needs sudo, absent in base image) is unnecessary.
+# npm tools intentionally follow compatible available releases, without custom
+# pins. Reuse the official image's managed Chromium instead of downloading a
+# second browser; legacy base images retain their existing installation path.
 RUN npm install -g --allow-scripts=@larksuite/cli,agent-browser agent-browser @larksuite/cli && \
-    agent-browser install && \
+    if [ ! -s /etc/hermes/agent-browser-executable-path ]; then agent-browser install; fi && \
     rm -rf /tmp/* /root/.npm /root/.cache /tmp/.npm
+
+# Fail the build before publication if imports, native Silk, XLSX or fonts fail.
+COPY scripts/verify_image_dependencies.py scripts/install_image_dependencies.py /tmp/
+RUN mkdir -p /tmp/image-smoke-home && chown hermes /tmp/image-smoke-home && \
+    cd / && HERMES_HOME=/tmp/image-smoke-home HOME=/tmp/image-smoke-home \
+        /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python \
+        /tmp/verify_image_dependencies.py --check-hermes && \
+    rm -rf /tmp/image-smoke-home /tmp/verify_image_dependencies.py /tmp/install_image_dependencies.py
 
 # Backport upstream #62930 / #86417: a normal availability gate returning
 # False means an optional capability is off, not that its probe crashed.
