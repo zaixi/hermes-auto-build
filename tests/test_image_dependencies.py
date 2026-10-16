@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import tomllib
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "install_image_dependencies.py"
@@ -56,15 +57,50 @@ exclude-newer = "3 days"
         extras = {command[i + 1] for i, value in enumerate(command) if value == "--extra"}
         self.assertEqual(extras, {"all", "matrix", "otlp", "feishu", "edge-tts", "silk", "image-custom"})
 
-    def test_missing_baseline_fails_instead_of_dropping_upstream_features(self):
+    def test_selection_is_read_or_reported_absent_never_guessed(self):
         adapter = self.load_adapter()
         with tempfile.TemporaryDirectory() as temp:
             facts = Path(temp) / "facts.json"
+            facts.write_text('{"schema":1,"packages":{"venv":{"stamp":"legacy"}}}')
+            self.assertIsNone(adapter.recorded_selection(facts), "v0.21.6-style base has no selection")
             facts.write_text('{"schema":1,"packages":{}}')
-            with self.assertRaisesRegex(ValueError, "selection"):
-                adapter.baseline_extras(facts)
+            self.assertIsNone(adapter.recorded_selection(facts))
+            for invalid in ('{"packages":{"venv":{"extras":[]}}}',
+                            '{"packages":{"venv":{"extras":[1]}}}',
+                            '{"packages":{"venv":{"extras":"all"}}}'):
+                with self.subTest(invalid=invalid):
+                    facts.write_text(invalid)
+                    with self.assertRaisesRegex(ValueError, "selection"):
+                        adapter.recorded_selection(facts)
             facts.write_text('{"schema":1,"packages":{"venv":{"extras":["all","matrix"]}}}')
-            self.assertEqual(adapter.baseline_extras(facts), ["all", "matrix"])
+            self.assertEqual(adapter.recorded_selection(facts), ["all", "matrix"])
+
+    def test_unrecorded_pm_base_is_refused_with_the_real_reason(self):
+        import runpy
+        import sys
+        import types
+
+        self.load_adapter()
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "hermes"
+            (source / "pm").mkdir(parents=True)
+            (source / "pm/build_env.py").write_text("")  # a PM base without --record-selection
+            facts = Path(temp) / "facts.json"
+            facts.write_text('{"schema":1,"packages":{"venv":{"stamp":"0ef3f43d"}}}')
+            (source / "pyproject.toml").write_text(
+                '[project.optional-dependencies]\nfeishu = ["lark-oapi==1.6.8"]\n'
+                'edge-tts = ["edge-tts==7.2.7"]\nsilk = ["pilk==0.2.4"]\n')
+            requirements = Path(temp) / "requirements-custom.txt"
+            requirements.write_text("pandas\n")
+            pm_package = types.ModuleType("pm")
+            pm_package.__path__ = [str(source / "pm")]
+            pm_paths = types.ModuleType("pm.paths")
+            setattr(pm_paths, "facts_path", lambda: facts)
+            argv = ["install_image_dependencies.py", "--source", str(source),
+                    "--requirements", str(requirements)]
+            with patch.dict(sys.modules, {"pm": pm_package, "pm.paths": pm_paths}), \
+                    patch("sys.argv", argv), self.assertRaisesRegex(ValueError, "record-selection"):
+                runpy.run_path(str(SCRIPT), run_name="__main__")
 
     def test_adapter_has_a_real_cli(self):
         import subprocess
@@ -89,7 +125,6 @@ exclude-newer = "3 days"
         self.assertIn("cd / &&", dockerfile)
 
     def test_pm_replacement_reassembles_commands_and_readable_facts(self):
-        from unittest.mock import patch
         adapter = self.load_adapter()
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp)

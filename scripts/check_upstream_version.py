@@ -9,6 +9,12 @@ from urllib.error import HTTPError
 UPSTREAM_IMAGE = os.environ['UPSTREAM_IMAGE']
 IMAGE_NAME = os.environ['IMAGE_NAME']
 FORCE = os.environ.get('FORCE_MODE', 'false').lower() == 'true'
+# The oldest release whose image records the dependency selection this build
+# consumes: upstream added `pm.build_env --record-selection` in v0.21.7, so
+# v0.21.6-style images ship no selection and a sealed rebuild of them would
+# silently drop upstream's own extras. They are not valid bases and are never
+# backfilled. Legacy date-versioned images keep their uv install path.
+BACKFILL_MIN_RELEASE = os.environ.get('BACKFILL_MIN_RELEASE', 'v0.21.7')
 
 
 def docker_hub_get(path, allow_missing=False):
@@ -56,9 +62,34 @@ if not tags:
     raise RuntimeError('No supported stable upstream tags found; refusing an unknown base')
 print(f'  Found {len(tags)} stable tags; newest: {tags[0]}', flush=True)
 
-selected = tags[0] if FORCE else ''
-if not FORCE:
-    for tag in tags:
+floor = version_key(BACKFILL_MIN_RELEASE)
+if floor is None or floor[0] != 1:
+    raise RuntimeError(f'Invalid backfill floor {BACKFILL_MIN_RELEASE!r}')
+def eligible_base(tag, release_floor):
+    """Date-versioned images keep the uv path; releases must carry a selection."""
+    key = version_key(tag)
+    if key is None:
+        return False
+    return key[0] == 0 or key >= release_floor
+
+
+eligible = [tag for tag in tags if eligible_base(tag, floor)]
+if not eligible:
+    raise RuntimeError(
+        f'No supported stable upstream tags at or above {BACKFILL_MIN_RELEASE}; refusing an unknown base'
+    )
+if len(eligible) != len(tags):
+    print(f'  {len(tags) - len(eligible)} tag(s) below the supported base floor '
+          f'{BACKFILL_MIN_RELEASE} excluded', flush=True)
+
+if FORCE:
+    if tags[0] not in eligible:
+        raise RuntimeError(f'Newest upstream tag {tags[0]} is below the supported base floor '
+                           f'{BACKFILL_MIN_RELEASE}')
+    selected = tags[0]
+else:
+    selected = ''
+    for tag in eligible:
         if docker_hub_get(f'/repositories/{IMAGE_NAME}/tags/{tag}', allow_missing=True) is None:
             selected = tag
             break

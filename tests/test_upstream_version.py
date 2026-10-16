@@ -60,6 +60,25 @@ class VersionDetectionTests(unittest.TestCase):
         self.assertEqual(self.detect(['v0.22.1', 'v0.22.0'], built=['v0.22.1']),
                          {'should_build': 'true', 'upstream_tag': 'v0.22.0', 'is_newest': 'false'})
 
+    def test_release_bases_below_the_sealed_selection_floor_are_not_backfilled(self):
+        # v0.21.6 ships no `packages.venv.extras` selection (upstream added
+        # --record-selection in v0.21.7), so it must never be rebuilt sealed.
+        self.assertEqual(self.detect(['v0.22.2', 'v0.22.1', 'v0.22.0', 'v0.21.6'],
+                                     built=['v0.22.2', 'v0.22.1', 'v0.22.0']),
+                         {'should_build': 'false', 'upstream_tag': '', 'is_newest': 'false'})
+
+    def test_newer_supported_release_still_wins_over_an_excluded_legacy_release(self):
+        self.assertEqual(self.detect(['v0.22.3', 'v0.21.6'])['upstream_tag'], 'v0.22.3')
+
+    def test_legacy_date_images_keep_their_backfill_path(self):
+        self.assertEqual(self.detect(['v2026.9.24', 'v0.22.1'], built=['v0.22.1']),
+                         {'should_build': 'true', 'upstream_tag': 'v2026.9.24', 'is_newest': 'false'})
+
+    def test_only_unsupported_release_bases_fail_closed_even_when_forced(self):
+        for tags in (['v0.21.6'], ['latest', 'v0.21.6']):
+            with self.subTest(tags=tags), self.assertRaises(RuntimeError):
+                self.detect(tags, force=True)
+
     def test_force_rebuilds_newest_not_missing_older_tag(self):
         self.assertEqual(self.detect(['v0.22.1', 'v0.22.0'], built=['v0.22.1'], force=True)['upstream_tag'], 'v0.22.1')
 

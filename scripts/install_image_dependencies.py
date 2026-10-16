@@ -44,10 +44,18 @@ def pm_build_command(source: Path, baseline: list[str]) -> list[str]:
     return command
 
 
-def baseline_extras(facts: Path) -> list[str]:
-    """Read the shipped PM baseline; an unknown baseline must not be guessed."""
+def recorded_selection(facts: Path) -> list[str] | None:
+    """The base image's own sealed selection, or None when it predates it.
+
+    Upstream records the shipped extras only from v0.21.7 (`pm.build_env
+    --record-selection`); a v0.21.6-style image has a PM build API and no
+    selection. Such a base cannot be extended without silently dropping the
+    extras upstream built in, so it is refused rather than guessed.
+    """
     data = json.loads(facts.read_text(encoding="utf-8"))
     extras = data.get("packages", {}).get("venv", {}).get("extras")
+    if extras is None:
+        return None
     if not isinstance(extras, list) or not extras or not all(isinstance(x, str) and x for x in extras):
         raise ValueError("Missing or invalid upstream dependency selection")
     return extras
@@ -114,7 +122,13 @@ def main() -> int:
         from pm.paths import facts_path
 
         facts = facts_path()
-        baseline = baseline_extras(facts)
+        baseline = recorded_selection(facts)
+        if baseline is None:
+            raise ValueError(
+                "Base image predates the sealed dependency selection this build extends "
+                "(upstream pm.build_env --record-selection, first shipped in v0.21.7); "
+                "refusing to rebuild an unrecorded environment"
+            )
         add_custom_extra(project, requirements)
         rebuild_pm_environment(source, baseline, facts)
         return 0
