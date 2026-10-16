@@ -45,6 +45,17 @@ RUN if [ -x /usr/local/bin/python3 ]; then \
         --source /opt/hermes --requirements /opt/hermes/requirements-custom.txt && \
     rm /tmp/install_image_dependencies.py
 
+# Separate passive sealed-base diagnostics from runtime plugin selections. Apply
+# only during image construction; unknown upstream implementations fail closed.
+COPY patches/apply_sealed_runtime_drift.py /tmp/image-regression/patches/apply_sealed_runtime_drift.py
+COPY tests/test_sealed_runtime_drift.py /tmp/image-regression/tests/test_sealed_runtime_drift.py
+RUN /opt/hermes/.venv/bin/python /tmp/image-regression/patches/apply_sealed_runtime_drift.py /opt/hermes && \
+    if [ -f /opt/hermes/pm/build_env.py ]; then \
+        HERMES_SOURCE_ROOT=/opt/hermes HERMES_TEST_USE_SOURCE_AS_IS=1 PYTHONDONTWRITEBYTECODE=1 \
+            /opt/hermes/.venv/bin/python /tmp/image-regression/tests/test_sealed_runtime_drift.py; \
+    fi && \
+    rm -rf /tmp/image-regression
+
 # npm tools intentionally follow compatible available releases, without custom
 # pins. Reuse the official image's managed Chromium instead of downloading a
 # second browser; legacy base images retain their existing installation path.

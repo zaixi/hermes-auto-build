@@ -44,6 +44,31 @@ docker.io/<你的用户名>/hermes-agent:latest
 docker.io/<你的用户名>/hermes-agent:<upstream-sha>
 ```
 
+### Sealed PM 启动诊断回归
+
+`pm.build_env --record-selection` 为镜像记录的是 `plugin_dirs=[]` 的基础环境。
+v0.22.1 的被动启动检查却默认把各 profile 的插件目录加入 stamp，导致仅挂载
+运行期插件就报告 `install out of sync`，即使镜像的锁文件、extras、Python 均未改变。
+
+构建时的 `patches/apply_sealed_runtime_drift.py` 仅调整 `pm.install.drift`：
+有效 sealed 镜像且没有已提交的运行期 venv selection 时，检查插件为空的基础 stamp；
+一旦存在运行期 selection，仍检查完整插件集合。显式 `venv_is_current`、插件准入、
+sync/repair 不改；真实锁文件、extras、环境缺失及工具漂移仍报错。
+这不是“插件依赖已满足”的保证：插件必须经过 PM 准入，不能靠消除基础镜像告警代替。
+
+这是本仓库的下游兼容修复，不宣称已有官方补丁。仅识别已审计的上游代码，重复执行幂等；
+遇到未知上游实现会中止构建，需人工复核。旧版无 PM 镜像跳过。
+构建中会执行行为回归，最终普通用户 smoke 也会调用真正的 `check_runtime`，不再仅检查 `--version`。
+
+在已有完整 Hermes 源码及运行依赖的环境中运行（源码只读，补丁先在内存或临时目录应用）：
+
+```bash
+HERMES_SOURCE_ROOT=/opt/hermes PYTHONDONTWRITEBYTECODE=1 \
+    python3 -m unittest discover -s tests -p test_sealed_runtime_drift.py -v
+```
+
+只修改仓库并运行测试不会修复当前容器；必须另行批准构建和部署新镜像。
+
 ## 本地测试构建
 
 ```bash

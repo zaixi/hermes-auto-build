@@ -70,7 +70,16 @@ def main() -> int:
         facts = args.source / "tools/facts.json"
         if facts.exists():
             facts.read_text()
-        print("Hermes source binding, CLI and metadata access OK", flush=True)
+        if (args.source / "pm/build_env.py").is_file():
+            # --version is metadata-only and cannot detect startup PM drift.
+            subprocess.run([
+                sys.executable, "-c",
+                "from pathlib import Path; "
+                "from hermes_cli.venv_sync import check_runtime; "
+                f"problem = check_runtime(Path({str(args.source)!r})); "
+                "raise SystemExit(problem)",
+            ], cwd="/", check=True)
+        print("Hermes source binding, CLI, runtime drift and metadata access OK", flush=True)
     return 0
 
 
