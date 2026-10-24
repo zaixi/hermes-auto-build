@@ -77,6 +77,45 @@ def add_custom_extra(project: Path, requirements: list[str]) -> None:
     project.write_text(updated, encoding="utf-8")
 
 
+def constrain_image_resolution(project: Path) -> None:
+    """Resolve this Linux amd64 image, not unsupported universal-lock targets.
+
+    uv lock considers every extra, even ones not selected for installation.
+    v0.22.5's Python-only scope includes emscripten, where faster-whisper's
+    wheel-only closure cannot resolve. Intersect upstream's scope with our
+    image target; retain its Python floor, overrides, pins and capabilities.
+    """
+    import re
+
+    text = project.read_text(encoding="utf-8")
+    data = tomllib.loads(text)
+    uv = data.get("tool", {}).get("uv", {})
+    target = "sys_platform == 'linux' and platform_machine == 'x86_64'"
+    scopes = uv.get("environments") or []
+    environments = [f"({scope}) and ({target})" for scope in scopes] or [target]
+    assignment = f"environments = {json.dumps(environments)}"
+    table = re.search(r"(?m)^\[tool\.uv\][ \t]*(?:#.*)?\n", text)
+    if table is None:
+        updated = text + f"\n[tool.uv]\n{assignment}\n"
+    else:
+        following = re.search(r"(?m)^\[", text[table.end():])
+        end = table.end() + following.start() if following else len(text)
+        body = text[table.end():end]
+        if "environments" in uv:
+            body, count = re.subn(r"(?m)^environments[ \t]*=[ \t]*\[[^\]]*\]",
+                                  lambda _: assignment, body)
+            if count != 1:
+                raise ValueError("Cannot safely constrain upstream uv environments")
+        else:
+            body = assignment + "\n" + body
+        updated = text[:table.end()] + body + text[end:]
+    expected = data.setdefault("tool", {}).setdefault("uv", {})
+    expected["environments"] = environments
+    if tomllib.loads(updated) != data:
+        raise ValueError("Resolver target edit changed unrelated upstream metadata")
+    project.write_text(updated, encoding="utf-8")
+
+
 def rebuild_pm_environment(source: Path, baseline: list[str], facts: Path) -> None:
     """Replace the baked environment, then restore the official offline assembly."""
     import shutil
@@ -130,6 +169,7 @@ def main() -> int:
                 "refusing to rebuild an unrecorded environment"
             )
         add_custom_extra(project, requirements)
+        constrain_image_resolution(project)
         rebuild_pm_environment(source, baseline, facts)
         return 0
     else:

@@ -44,6 +44,80 @@ exclude-newer = "3 days"
         self.assertEqual(extras["image-custom"], ["pandas", "hindsight-client>=0.10.1,<1"])
         self.assertEqual(result["tool"]["uv"]["exclude-newer"], "3 days")
 
+    def test_image_resolution_intersects_upstream_python_scope_with_linux_amd64(self):
+        adapter = self.load_adapter()
+        original = '''[project]
+requires-python = ">=3.11,<3.15"
+[project.optional-dependencies]
+stt-whisper = ["faster-whisper==1.2.1"]
+[tool.uv]
+environments = ["python_version >= '3.14'"]
+override-dependencies = ["Pillow==13.0.0"]
+exclude-newer = "3 days"
+[tool.other]
+environments = ["unrelated"]
+'''
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "pyproject.toml"
+            project.write_text(original)
+            adapter.constrain_image_resolution(project)
+            result = tomllib.loads(project.read_text())
+        before = tomllib.loads(original)
+        self.assertEqual(result["tool"]["uv"].pop("environments"), [
+            "(python_version >= '3.14') and (sys_platform == 'linux' and platform_machine == 'x86_64')"
+        ])
+        before["tool"]["uv"].pop("environments")
+        self.assertEqual(result, before, "Only the resolver target may change; no pins/features may be dropped")
+
+    def test_resolution_scope_handles_missing_and_multiline_uv_settings(self):
+        adapter = self.load_adapter()
+        target = "sys_platform == 'linux' and platform_machine == 'x86_64'"
+        for original, expected in [
+            ('[project]\nname="hermes-agent"\n', [target]),
+            ('[tool.uv]\nexclude-newer="3 days"\n', [target]),
+            ('[tool.uv]\nenvironments=[]\n', [target]),
+            ('[tool.uv]\nenvironments=[\n "python_version >= \'3.14\'",\n'
+             ' "python_version == \'3.13\' or python_version == \'3.12\'",\n]\n',
+             [f"(python_version >= '3.14') and ({target})",
+              f"(python_version == '3.13' or python_version == '3.12') and ({target})"]),
+        ]:
+            with self.subTest(original=original), tempfile.TemporaryDirectory() as temp:
+                project = Path(temp) / "pyproject.toml"
+                project.write_text(original)
+                adapter.constrain_image_resolution(project)
+                self.assertEqual(tomllib.loads(project.read_text())["tool"]["uv"]["environments"], expected)
+
+    def test_pm_cli_constrains_resolution_before_rebuilding(self):
+        import sys
+        import types
+
+        adapter = self.load_adapter()
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp)
+            (source / "pm").mkdir()
+            (source / "pm/build_env.py").write_text("")
+            facts = source / "facts.json"
+            facts.write_text('{"packages":{"venv":{"extras":["all","matrix"]}}}')
+            (source / "pyproject.toml").write_text(
+                '[project.optional-dependencies]\nfeishu=[]\nedge-tts=[]\nsilk=[]\n'
+                '[tool.uv]\nenvironments=["python_version >= \'3.14\'"]\n')
+            requirements = source / "requirements.txt"
+            requirements.write_text("pandas\n")
+            pm_paths = types.ModuleType("pm.paths")
+            setattr(pm_paths, "facts_path", lambda: facts)
+
+            def rebuild(actual_source, baseline, actual_facts):
+                self.assertEqual((actual_source, baseline, actual_facts), (source, ["all", "matrix"], facts))
+                data = tomllib.loads((source / "pyproject.toml").read_text())
+                self.assertIn("sys_platform == 'linux'", data["tool"]["uv"]["environments"][0])
+                self.assertEqual(data["project"]["optional-dependencies"]["image-custom"], ["pandas"])
+
+            with patch.dict(sys.modules, {"pm.paths": pm_paths}), \
+                    patch("sys.argv", [str(SCRIPT), "--source", str(source), "--requirements", str(requirements)]), \
+                    patch.object(adapter, "rebuild_pm_environment", side_effect=rebuild) as build:
+                self.assertEqual(adapter.main(), 0)
+                build.assert_called_once()
+
     def test_build_command_keeps_base_selection_and_uses_pm(self):
         adapter = self.load_adapter()
         source = Path("/image/hermes")
