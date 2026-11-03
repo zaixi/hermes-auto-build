@@ -71,6 +71,3 @@ RUN mkdir -p /tmp/image-smoke-home && chown hermes /tmp/image-smoke-home && \
         /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python \
         /tmp/verify_image_dependencies.py --check-hermes && \
     rm -rf /tmp/image-smoke-home /tmp/verify_image_dependencies.py /tmp/install_image_dependencies.py
-
-# Custom skills — synced to volume by entrypoint's skills_sync.py
-COPY skills /opt/hermes/skills/
