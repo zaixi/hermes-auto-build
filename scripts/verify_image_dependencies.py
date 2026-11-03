@@ -15,10 +15,17 @@ def verify_cli_tools() -> None:
         if not shutil.which(command):
             raise RuntimeError(f"Missing runtime CLI on PATH: {command}")
         subprocess.run([command, "--version"], check=True, timeout=30, cwd="/")
-    # The terminal tool uses login shells, whose /etc/profile resets PATH.
-    subprocess.run(["/bin/sh", "-lc",
-                    "set -e; agent-browser --version; lark-cli --version"],
-                   check=True, timeout=30, cwd="/")
+    # Keep upstream shim precedence in regular shells and the terminal tool's
+    # login shell; both must still discover the report-processing packages.
+    shell_check = (
+        "set -e; agent-browser --version; lark-cli --version; "
+        "python -c 'import pandas, openpyxl'; "
+        "if [ -x /opt/hermes/bin/hermes ]; then "
+        'test "$(command -v hermes)" = /opt/hermes/bin/hermes; fi'
+    )
+    for mode in ("-c", "-lc"):
+        subprocess.run(["/bin/sh", mode, shell_check],
+                       check=True, timeout=30, cwd="/")
     browser = os.environ.get("AGENT_BROWSER_EXECUTABLE_PATH")
     if not browser or not os.access(browser, os.X_OK):
         raise RuntimeError("Missing executable AGENT_BROWSER_EXECUTABLE_PATH")

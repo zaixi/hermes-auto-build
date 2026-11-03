@@ -85,6 +85,30 @@ class ImageToolTests(unittest.TestCase):
             result = subprocess.run([str(link), "--version"], check=True, capture_output=True, text=True)
             self.assertIn("Chromium fixture", result.stdout)
 
+    def test_dockerfile_keeps_upstream_path_and_only_adds_a_legacy_login_hook(self):
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        self.assertFalse(any(line.startswith("ENV PATH=") for line in dockerfile.splitlines()),
+                         "Do not prepend the baked venv ahead of the upstream Hermes shim")
+        self.assertIn('if [ ! -r /etc/profile.d/hermes.sh ]; then', dockerfile)
+        start = dockerfile.index('RUN if [ ! -r /etc/profile.d/hermes.sh ]; then')
+        command = dockerfile[start + 4:].split('\n\n', 1)[0].replace('\\\n', '')
+        for native in (True, False):
+            with self.subTest(native=native), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                profile = root / "profile.d"
+                profile.mkdir()
+                official = profile / "hermes.sh"
+                if native:
+                    official.write_text('# upstream hook must stay untouched\n')
+                subprocess.run(['/bin/sh', '-ec', command.replace('/etc/profile.d', str(profile))],
+                               check=True)
+                fallback = profile / "hermes-path.sh"
+                self.assertEqual(fallback.exists(), not native)
+                if native:
+                    self.assertEqual(official.read_text(), '# upstream hook must stay untouched\n')
+                else:
+                    self.assertIn('/opt/hermes/bin:/opt/hermes/.venv/bin:', fallback.read_text())
+
     def test_dockerfile_installs_npm_commands_into_stable_runtime_path(self):
         dockerfile = (ROOT / "Dockerfile").read_text()
         self.assertIn("npm install -g --prefix /usr/local", dockerfile)
@@ -103,6 +127,9 @@ class ImageToolTests(unittest.TestCase):
         self.assertIn('"get", "title"', smoke)
         self.assertIn('"close"', smoke)
         self.assertIn('"-lc"', smoke)
+        self.assertIn('"-c"', smoke)
+        self.assertIn('command -v hermes', smoke)
+        self.assertIn('import pandas, openpyxl', smoke)
         self.assertIn("verify_cli_tools()", smoke)
 
     def smoke_adapter(self):

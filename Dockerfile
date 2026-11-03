@@ -1,14 +1,13 @@
 ARG BASE_TAG=latest
 FROM nousresearch/hermes-agent:${BASE_TAG}
 
-# Ensure venv bin is on PATH for all processes (gateway, terminal, sandbox)
-ENV PATH="/opt/hermes/.venv/bin:${PATH}"
-
-# Ensure .venv/bin survives login shell (used by terminal tool's env snapshot)
-# Login shells source /etc/profile which resets PATH to system defaults.
-# /etc/profile.d/*.sh is the standard Debian mechanism to extend login PATH.
-RUN mkdir -p /etc/profile.d && \
-    echo 'export PATH="/opt/hermes/.venv/bin:$PATH"' > /etc/profile.d/hermes-path.sh
+# Inherit upstream PATH and /etc/profile.d/hermes.sh; keep its launcher shim
+# ahead of the baked venv. Older bases need a login-shell hook only.
+RUN if [ ! -r /etc/profile.d/hermes.sh ]; then \
+        mkdir -p /etc/profile.d && \
+        printf '%s\n' 'export PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:$PATH"' \
+            > /etc/profile.d/hermes-path.sh; \
+    fi
 
 # Install additional apt packages
 # file: agent 识别文件类型（whp 2026-08-21 曾因缺 file 报 command not found）
