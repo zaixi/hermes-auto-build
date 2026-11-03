@@ -25,7 +25,11 @@ def verify_cli_tools() -> None:
     subprocess.run([browser, "--version"], check=True, timeout=30, cwd="/")
     # Exercise the CLI's actual browser launch under the runtime UID. The
     # local data URL needs no network, accounts, API keys or external service.
-    command = ["agent-browser", "--session", f"image-smoke-{os.getpid()}"]
+    # BuildKit on hosted runners cannot provide Chrome's userns sandbox.
+    # Disable it only for this offline data-URL smoke, never in image ENV or
+    # the runtime browser configuration. Pass identical flags on cleanup too.
+    command = ["agent-browser", "--session", f"image-smoke-{os.getpid()}",
+               "--args", "--no-sandbox"]
     try:
         subprocess.run(command + ["open", "data:text/html,<title>hermes-image-smoke</title>"],
                        check=True, timeout=60, cwd="/")

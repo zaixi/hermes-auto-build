@@ -122,7 +122,7 @@ class ImageToolTests(unittest.TestCase):
                 def run(command, **kwargs):
                     calls.append(command)
                     if "--session" in command:
-                        if failure in ("open", "get") and command[3] == failure:
+                        if failure in ("open", "get") and command[5] == failure:
                             raise subprocess.CalledProcessError(1, command)
                         title = "wrong" if failure == "wrong-title" else "hermes-image-smoke"
                         return subprocess.CompletedProcess(command, 0, stdout=title)
@@ -138,8 +138,9 @@ class ImageToolTests(unittest.TestCase):
                     else:
                         smoke.verify_cli_tools()
                 browser_calls = [command for command in calls if "--session" in command]
-                self.assertEqual(browser_calls[-1][3:], ["close"])
-                self.assertEqual(len({tuple(command[:3]) for command in browser_calls}), 1)
+                self.assertEqual(browser_calls[-1][5:], ["close"])
+                self.assertEqual(len({tuple(command[:5]) for command in browser_calls}), 1)
+                self.assertEqual(browser_calls[0][3:5], ["--args", "--no-sandbox"])
                 self.assertIn(["/image/chrome", "--version"], calls)
                 self.assertTrue(any(command[:2] == ["/bin/sh", "-lc"] for command in calls))
 
