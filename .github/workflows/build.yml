@@ -32,6 +32,9 @@ jobs:
       - name: Test image dependency assembly
         run: python3 -m unittest discover -s tests -p test_image_dependencies.py -v
 
+      - name: Test browser markers and CLI contract
+        run: python3 -m unittest discover -s tests -p test_image_tools.py -v
+
       - name: Check upstream version
         id: check
         env:

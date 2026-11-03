@@ -12,6 +12,7 @@ RUN mkdir -p /etc/profile.d && \
 
 # Install additional apt packages
 # file: agent 识别文件类型（whp 2026-08-21 曾因缺 file 报 command not found）
+COPY scripts/image_browser.py /tmp/image_browser.py
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         jq \
@@ -22,9 +23,12 @@ RUN apt-get update && \
         zip \
         shellcheck \
         fonts-wqy-zenhei && \
-    if [ ! -s /etc/hermes/agent-browser-executable-path ]; then \
+    browser_bin="$(python3 /tmp/image_browser.py)" && \
+    if [ -z "$browser_bin" ]; then \
         apt-get install -y --no-install-recommends chromium; \
     fi && \
+    python3 /tmp/image_browser.py --link /usr/local/bin/hermes-chromium && \
+    rm /tmp/image_browser.py && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -56,11 +60,12 @@ RUN /opt/hermes/.venv/bin/python /tmp/image-regression/patches/apply_sealed_runt
     fi && \
     rm -rf /tmp/image-regression
 
-# npm tools intentionally follow compatible available releases, without custom
-# pins. Reuse the official image's managed Chromium instead of downloading a
-# second browser; legacy base images retain their existing installation path.
-RUN npm install -g --allow-scripts=@larksuite/cli,agent-browser agent-browser @larksuite/cli && \
-    if [ ! -s /etc/hermes/agent-browser-executable-path ]; then agent-browser install; fi && \
+# A PM-managed npm may default to a versioned global prefix outside PATH.
+# Keep downstream CLIs in /usr/local/bin, without modifying PM's Node store.
+# Both old and new bases reuse their existing Chromium; no second download.
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/hermes-chromium
+RUN npm install -g --prefix /usr/local --allow-scripts=@larksuite/cli,agent-browser agent-browser @larksuite/cli && \
+    agent-browser --version && lark-cli --version && \
     rm -rf /tmp/* /root/.npm /root/.cache /tmp/.npm
 
 # Fail the build before publication if imports, native Silk, XLSX or fonts fail.

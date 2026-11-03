@@ -1,10 +1,41 @@
-"""Offline build smoke checks; never contact providers or start services."""
+"""Offline build smoke checks; no provider calls or persistent services."""
 from importlib import import_module, metadata
 from io import BytesIO
 from pathlib import Path
 import argparse
+import os
+import shutil
+import subprocess
 import tempfile
 from install_image_dependencies import feature_requirements
+
+
+def verify_cli_tools() -> None:
+    for command in ("agent-browser", "lark-cli"):
+        if not shutil.which(command):
+            raise RuntimeError(f"Missing runtime CLI on PATH: {command}")
+        subprocess.run([command, "--version"], check=True, timeout=30, cwd="/")
+    # The terminal tool uses login shells, whose /etc/profile resets PATH.
+    subprocess.run(["/bin/sh", "-lc",
+                    "set -e; agent-browser --version; lark-cli --version"],
+                   check=True, timeout=30, cwd="/")
+    browser = os.environ.get("AGENT_BROWSER_EXECUTABLE_PATH")
+    if not browser or not os.access(browser, os.X_OK):
+        raise RuntimeError("Missing executable AGENT_BROWSER_EXECUTABLE_PATH")
+    subprocess.run([browser, "--version"], check=True, timeout=30, cwd="/")
+    # Exercise the CLI's actual browser launch under the runtime UID. The
+    # local data URL needs no network, accounts, API keys or external service.
+    command = ["agent-browser", "--session", f"image-smoke-{os.getpid()}"]
+    try:
+        subprocess.run(command + ["open", "data:text/html,<title>hermes-image-smoke</title>"],
+                       check=True, timeout=60, cwd="/")
+        result = subprocess.run(command + ["get", "title"], check=True,
+                                capture_output=True, text=True, timeout=30, cwd="/")
+        if "hermes-image-smoke" not in result.stdout:
+            raise RuntimeError(f"Browser smoke returned unexpected title: {result.stdout!r}")
+    finally:
+        subprocess.run(command + ["close"], check=True, timeout=30, cwd="/")
+    print("Runtime CLI, login-shell PATH and browser launch OK", flush=True)
 
 
 def main() -> int:
@@ -15,6 +46,8 @@ def main() -> int:
     parser.add_argument("--requirements", type=Path)
     parser.add_argument("--check-hermes", action="store_true")
     args = parser.parse_args()
+
+    verify_cli_tools()
 
     custom = args.requirements or args.source / "requirements-custom.txt"
     specifications = [line.strip() for line in custom.read_text().splitlines()
