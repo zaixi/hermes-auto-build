@@ -76,28 +76,5 @@ RUN mkdir -p /tmp/image-smoke-home && chown hermes /tmp/image-smoke-home && \
         /tmp/verify_image_dependencies.py --check-hermes && \
     rm -rf /tmp/image-smoke-home /tmp/verify_image_dependencies.py /tmp/install_image_dependencies.py
 
-# Backport upstream #62930 / #86417: a normal availability gate returning
-# False means an optional capability is off, not that its probe crashed.
-# Keep exceptions and recent-success flakes at WARNING; steady-state False
-# verdicts may be DEBUG (our backport) or INFO (upstream v2026.9.21+) so they
-# do not flood Docker warning logs.
-COPY patches/apply_check_fn_false_debug.py /tmp/apply_check_fn_false_debug.py
-COPY tests/test_check_fn_false_log_level.py /tmp/test_check_fn_false_log_level.py
-RUN if HERMES_SOURCE_ROOT=/opt/hermes \
-        /opt/hermes/.venv/bin/python /tmp/test_check_fn_false_log_level.py >/tmp/check-fn-preflight.log 2>&1; then \
-        echo 'check_fn False log-level behavior already fixed upstream; skipping hotfix'; \
-    else \
-        /opt/hermes/.venv/bin/python /tmp/apply_check_fn_false_debug.py \
-            /opt/hermes/tools/registry.py; \
-    fi && \
-    /opt/hermes/.venv/bin/python -m py_compile \
-        /opt/hermes/tools/registry.py && \
-    HERMES_SOURCE_ROOT=/opt/hermes \
-        /opt/hermes/.venv/bin/python /tmp/test_check_fn_false_log_level.py && \
-    rm -f \
-        /tmp/apply_check_fn_false_debug.py \
-        /tmp/test_check_fn_false_log_level.py \
-        /tmp/check-fn-preflight.log
-
 # Custom skills — synced to volume by entrypoint's skills_sync.py
 COPY skills /opt/hermes/skills/
