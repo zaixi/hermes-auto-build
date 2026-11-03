@@ -173,5 +173,23 @@ class PatchSafetyTests(unittest.TestCase):
             self.assertEqual(target.read_text(), self.adapter.patch_source(target.read_text()))
 
 
+def probe_main() -> int:
+    """0=contract satisfied, 1=assertion failure, 2=incomplete/broken probe.
+
+    Probe ONLY runtime behavior, without calling or testing the text adapter.
+    This lets a different upstream implementation satisfy the same contract.
+    """
+    with patch.dict(os.environ, {"HERMES_TEST_USE_SOURCE_AS_IS": "1"}):
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(SealedRuntimeDriftTests)
+        expected = suite.countTestCases()
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+    if (not expected or result.testsRun != expected or result.errors or
+            result.skipped or result.expectedFailures or result.unexpectedSuccesses):
+        return 2
+    return 0 if result.wasSuccessful() else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--probe"]:
+        raise SystemExit(probe_main())
     unittest.main(verbosity=2)

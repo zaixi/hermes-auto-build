@@ -48,15 +48,12 @@ RUN if [ -x /usr/local/bin/python3 ]; then \
         --source /opt/hermes --requirements /opt/hermes/requirements-custom.txt && \
     rm /tmp/install_image_dependencies.py
 
-# Separate passive sealed-base diagnostics from runtime plugin selections. Apply
-# only during image construction; unknown upstream implementations fail closed.
+# Probe passive sealed-base diagnostics before considering a source patch. An
+# upstream fix needs no rewrite; incomplete probes/unknown broken code fail closed.
 COPY patches/apply_sealed_runtime_drift.py /tmp/image-regression/patches/apply_sealed_runtime_drift.py
 COPY tests/test_sealed_runtime_drift.py /tmp/image-regression/tests/test_sealed_runtime_drift.py
-RUN /opt/hermes/.venv/bin/python /tmp/image-regression/patches/apply_sealed_runtime_drift.py /opt/hermes && \
-    if [ -f /opt/hermes/pm/build_env.py ]; then \
-        HERMES_SOURCE_ROOT=/opt/hermes HERMES_TEST_USE_SOURCE_AS_IS=1 PYTHONDONTWRITEBYTECODE=1 \
-            /opt/hermes/.venv/bin/python /tmp/image-regression/tests/test_sealed_runtime_drift.py; \
-    fi && \
+COPY scripts/ensure_sealed_runtime_drift.py /tmp/image-regression/scripts/ensure_sealed_runtime_drift.py
+RUN /opt/hermes/.venv/bin/python /tmp/image-regression/scripts/ensure_sealed_runtime_drift.py /opt/hermes && \
     rm -rf /tmp/image-regression
 
 # A PM-managed npm may default to a versioned global prefix outside PATH.

@@ -35,6 +35,9 @@ jobs:
       - name: Test browser markers and CLI contract
         run: python3 -m unittest discover -s tests -p test_image_tools.py -v
 
+      - name: Test sealed PM behavior-first patch gate
+        run: python3 -m unittest discover -s tests -p test_sealed_drift_gate.py -v
+
       - name: Check upstream version
         id: check
         env:
