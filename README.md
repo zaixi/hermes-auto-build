@@ -27,6 +27,8 @@
 
 Python 自定义包维护在 [`requirements-custom.txt`](./requirements-custom.txt)：默认不锁定版本，仅保留插件要求的兼容范围。飞书、Edge TTS、Silk 的必要版本约束直接读取对应上游版本的声明，不在本仓库重复写死。
 
+已选择上游 `documents` 功能组的基座（如 v0.22.6）直接使用其 `openpyxl`，不再重复列入自定义 extra；旧版没有这项选择时仍补装 `openpyxl`，保留 XLSX 能力。PATH 和登录 shell 优先沿用官方设置，不把 baked venv 放到 Hermes 启动 shim 前面；仅在旧基座没有 `/etc/profile.d/hermes.sh` 时添加登录 shell 兜底。构建会同时检查普通 shell、登录 shell 的命令顺序和 pandas/openpyxl 导入。
+
 PM 管理的新镜像会保留原有功能选择，重新解析依赖、构建环境并恢复官方源码绑定和命令入口；旧镜像继续使用其原有安装器。构建时会以普通用户、在源码目录之外检查包导入、Hermes CLI、XLSX 读写、Silk 编解码及中文字体，失败不会发布镜像。
 
 ### 4. 启用 Actions

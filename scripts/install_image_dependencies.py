@@ -6,6 +6,11 @@ import tomllib
 CUSTOM_EXTRA = "image-custom"
 
 
+def requirements_for_selection(requirements: list[str], baseline: list[str]) -> list[str]:
+    """Use upstream's selected documents extra; retain XLSX on older bases."""
+    return list(requirements) + ([] if "documents" in baseline else ["openpyxl"])
+
+
 def feature_requirements(source: Path) -> dict[str, list[str]]:
     """Use release-owned extras, with the old allowlist as a legacy fallback."""
     import ast
@@ -168,7 +173,7 @@ def main() -> int:
                 "(upstream pm.build_env --record-selection, first shipped in v0.21.7); "
                 "refusing to rebuild an unrecorded environment"
             )
-        add_custom_extra(project, requirements)
+        add_custom_extra(project, requirements_for_selection(requirements, baseline))
         constrain_image_resolution(project)
         rebuild_pm_environment(source, baseline, facts)
         return 0
@@ -178,7 +183,7 @@ def main() -> int:
         uv = shutil.which("uv")
         if uv is None:
             raise ValueError("Neither upstream PM nor its legacy uv installer is available")
-        selected = list(requirements)
+        selected = requirements_for_selection(requirements, [])
         for specifications in official.values():
             selected.extend(specifications)
         command = [uv, "pip", "install", "--python", str(source / ".venv/bin/python"),

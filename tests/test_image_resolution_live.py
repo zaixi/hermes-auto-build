@@ -34,6 +34,7 @@ class RealResolverTests(unittest.TestCase):
                     shutil.copy2(source / name, project / name)
             requirements = [line.strip() for line in (ROOT / "requirements-custom.txt").read_text().splitlines()
                             if line.strip() and not line.startswith("#")]
+            requirements = adapter.requirements_for_selection(requirements, ["all"])
             adapter.add_custom_extra(project / "pyproject.toml", requirements)
             adapter.constrain_image_resolution(project / "pyproject.toml")
             command = [os.environ["HERMES_TEST_UV"], "lock", "--project", str(project), "--python", sys.executable]

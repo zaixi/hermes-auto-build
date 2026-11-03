@@ -97,9 +97,10 @@ environments = ["unrelated"]
             (source / "pm").mkdir()
             (source / "pm/build_env.py").write_text("")
             facts = source / "facts.json"
-            facts.write_text('{"packages":{"venv":{"extras":["all","matrix"]}}}')
+            facts.write_text('{"packages":{"venv":{"extras":["all","matrix","documents"]}}}')
             (source / "pyproject.toml").write_text(
                 '[project.optional-dependencies]\nfeishu=[]\nedge-tts=[]\nsilk=[]\n'
+                'documents=["openpyxl==3.1.5"]\n'
                 '[tool.uv]\nenvironments=["python_version >= \'3.14\'"]\n')
             requirements = source / "requirements.txt"
             requirements.write_text("pandas\n")
@@ -107,7 +108,7 @@ environments = ["unrelated"]
             setattr(pm_paths, "facts_path", lambda: facts)
 
             def rebuild(actual_source, baseline, actual_facts):
-                self.assertEqual((actual_source, baseline, actual_facts), (source, ["all", "matrix"], facts))
+                self.assertEqual((actual_source, baseline, actual_facts), (source, ["all", "matrix", "documents"], facts))
                 data = tomllib.loads((source / "pyproject.toml").read_text())
                 self.assertIn("sys_platform == 'linux'", data["tool"]["uv"]["environments"][0])
                 self.assertEqual(data["project"]["optional-dependencies"]["image-custom"], ["pandas"])
@@ -182,11 +183,23 @@ environments = ["unrelated"]
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--requirements", result.stdout)
 
+    def test_report_dependency_uses_selected_documents_with_legacy_fallback(self):
+        adapter = self.load_adapter()
+        requirements = ["pandas", "hermes-keenable-web"]
+        for baseline, expected in [
+            (["all", "documents"], requirements),
+            (["all"], requirements + ["openpyxl"]),
+            ([], requirements + ["openpyxl"]),
+        ]:
+            with self.subTest(baseline=baseline):
+                self.assertEqual(adapter.requirements_for_selection(requirements, baseline), expected)
+        self.assertEqual(requirements, ["pandas", "hermes-keenable-web"])
+
     def test_custom_packages_are_unpinned_except_plugin_api_bounds(self):
         manifest = ROOT / "requirements-custom.txt"
         self.assertTrue(manifest.is_file(), "Missing explicit custom dependency manifest")
         requirements = [line.strip() for line in manifest.read_text().splitlines() if line.strip() and not line.startswith("#")]
-        self.assertEqual(set(requirements), {"pandas", "openpyxl", "hermes-keenable-web", "hindsight-client>=0.10.1,<1", "hindsight-embed>=0.10.1,<1"})
+        self.assertEqual(set(requirements), {"pandas", "hermes-keenable-web", "hindsight-client>=0.10.1,<1", "hindsight-embed>=0.10.1,<1"})
 
     def test_image_has_font_and_runs_dependency_smoke_before_publication(self):
         dockerfile = (ROOT / "Dockerfile").read_text()
@@ -234,6 +247,21 @@ environments = ["unrelated"]
             selected = adapter.feature_requirements(root)
             self.assertEqual(selected["silk"], ["pilk==0.2.4"])
             self.assertEqual(selected["feishu"], ["lark-oapi==1.6.8"])
+
+    def test_legacy_cli_keeps_xlsx_without_a_documents_extra(self):
+        adapter = self.load_adapter()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / "pyproject.toml").write_text(
+                '[project.optional-dependencies]\nfeishu=[]\nedge-tts=[]\nsilk=[]\n')
+            requirements = source / "requirements.txt"
+            requirements.write_text("pandas\n")
+            with patch("sys.argv", [str(SCRIPT), "--source", str(source),
+                                    "--requirements", str(requirements)]), \
+                    patch("shutil.which", return_value="/legacy/uv"), \
+                    patch("subprocess.run") as run:
+                self.assertEqual(adapter.main(), 0)
+            self.assertEqual(run.call_args.args[0][-2:], ["pandas", "openpyxl"])
 
 
 if __name__ == "__main__":

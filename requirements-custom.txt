@@ -1,6 +1,6 @@
 # Custom tools follow available compatible releases; no unnecessary exact pins.
 pandas
-openpyxl
+# openpyxl follows the selected upstream documents extra; legacy bases get a fallback.
 hermes-keenable-web
 # Required API range declared by the installed Hindsight plugin.
 hindsight-client>=0.10.1,<1
