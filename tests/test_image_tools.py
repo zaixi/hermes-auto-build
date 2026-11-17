@@ -85,29 +85,25 @@ class ImageToolTests(unittest.TestCase):
             result = subprocess.run([str(link), "--version"], check=True, capture_output=True, text=True)
             self.assertIn("Chromium fixture", result.stdout)
 
-    def test_dockerfile_keeps_upstream_path_and_only_adds_a_legacy_login_hook(self):
+    def test_dockerfile_inherits_supported_upstream_path_without_legacy_hook(self):
         dockerfile = (ROOT / "Dockerfile").read_text()
         self.assertFalse(any(line.startswith("ENV PATH=") for line in dockerfile.splitlines()),
                          "Do not prepend the baked venv ahead of the upstream Hermes shim")
-        self.assertIn('if [ ! -r /etc/profile.d/hermes.sh ]; then', dockerfile)
-        start = dockerfile.index('RUN if [ ! -r /etc/profile.d/hermes.sh ]; then')
-        command = dockerfile[start + 4:].split('\n\n', 1)[0].replace('\\\n', '')
-        for native in (True, False):
-            with self.subTest(native=native), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                profile = root / "profile.d"
-                profile.mkdir()
-                official = profile / "hermes.sh"
-                if native:
-                    official.write_text('# upstream hook must stay untouched\n')
-                subprocess.run(['/bin/sh', '-ec', command.replace('/etc/profile.d', str(profile))],
-                               check=True)
-                fallback = profile / "hermes-path.sh"
-                self.assertEqual(fallback.exists(), not native)
-                if native:
-                    self.assertEqual(official.read_text(), '# upstream hook must stay untouched\n')
-                else:
-                    self.assertIn('/opt/hermes/bin:/opt/hermes/.venv/bin:', fallback.read_text())
+        self.assertNotIn("hermes-path.sh", dockerfile)
+        self.assertNotIn("RUN if [ ! -r /etc/profile.d/hermes.sh ]; then", dockerfile)
+
+    def test_real_tool_staging_regression_is_mandatory_under_runtime_uid(self):
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        self.assertIn("COPY tests/test_pm_tool_staging_live.py /tmp/", dockerfile)
+        self.assertIn("HERMES_TOOL_SOURCE=/opt/hermes", dockerfile)
+        self.assertIn("HERMES_TOOL_PM_PYTHON=/opt/hermes/pm-runtime/bin/python", dockerfile)
+        self.assertIn("HERMES_TOOL_SEED_STORE=/tmp/image-tool-seed", dockerfile)
+        self.assertIn("stage_tools(['node'], source_store=Path('/opt/hermes/tools')", dockerfile)
+        self.assertIn("chown -R hermes /tmp/image-tool-seed", dockerfile)
+        self.assertNotIn("chmod -R 777", dockerfile)
+        self.assertIn("HERMES_IMAGE_ADAPTER=/tmp/install_image_dependencies.py", dockerfile)
+        self.assertIn("/tmp/test_pm_tool_staging_live.py", dockerfile)
+        self.assertGreaterEqual(dockerfile.count("s6-setuidgid hermes"), 2)
 
     def test_dockerfile_installs_npm_commands_into_stable_runtime_path(self):
         dockerfile = (ROOT / "Dockerfile").read_text()

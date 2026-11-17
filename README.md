@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 定时检测 Hermes 上游更新，自动构建并推送
+- 定时检测 Hermes 最新稳定版，自动构建并推送（最低基座 v0.23.2）
 - 内置常用 apt 包（`jq unzip diffutils socat zip`）
 - 支持手动触发构建
 
@@ -27,9 +27,11 @@
 
 Python 自定义包维护在 [`requirements-custom.txt`](./requirements-custom.txt)：默认不锁定版本，仅保留插件要求的兼容范围。飞书、Edge TTS、Silk 的必要版本约束直接读取对应上游版本的声明，不在本仓库重复写死。
 
-已选择上游 `documents` 功能组的基座（如 v0.22.6）直接使用其 `openpyxl`，不再重复列入自定义 extra；旧版没有这项选择时仍补装 `openpyxl`，保留 XLSX 能力。PATH 和登录 shell 优先沿用官方设置，不把 baked venv 放到 Hermes 启动 shim 前面；仅在旧基座没有 `/etc/profile.d/hermes.sh` 时添加登录 shell 兜底。构建会同时检查普通 shell、登录 shell 的命令顺序和 pandas/openpyxl 导入。
+只支持 v0.23.2 及后续稳定版的 PM 构建协议；不再自动补建历史 release 或日期版本。已有旧版镜像保留，不删除。`documents`、`feishu`、`edge-tts`、`silk` 均采用对应上游版本的 extra 声明；`openpyxl` 不重复列入自定义 extra。PATH 和登录 shell 完全沿用官方设置，不把 baked venv 放到 Hermes 启动 shim 前面。构建会同时检查普通 shell、登录 shell 的命令顺序和 pandas/openpyxl 导入。
 
-PM 管理的新镜像会保留原有功能选择，重新解析依赖、构建环境并恢复官方源码绑定和命令入口；旧镜像继续使用其原有安装器。构建时会以普通用户、在源码目录之外检查包导入、Hermes CLI、XLSX 读写、Silk 编解码及中文字体，失败不会发布镜像。
+镜像保留原有功能选择，通过官方 PM 重新解析依赖、构建环境并恢复官方源码绑定和命令入口；不再维护旧 uv 安装器或读取旧 lazy-deps allowlist。缺失的锁定运行工具使用官方 `pm.prepare_tools(..., out=/opt/hermes/tools)` 写入镜像 store；不能使用 sealed payload 的运行期 `ensure()` 替代，因为它可能把工具安装到构建用户的数据目录，换 profile 或挂载数据卷后就不可见。
+
+构建时会以普通用户、在源码目录之外检查包导入、Hermes CLI、XLSX 读写、Silk 编解码、中文字体和完整运行时 drift，失败不会发布镜像。另有强制真实工具回归：复制隔离 payload、仅准备已有 node、执行真实的 pnpm 构建期安装，然后让构建数据目录不可见，在全新 HOME 下验证锁定 entry 和实际版本；物理移走 entry 的负对照仍必须被拒绝。这项回归只替代耗时的应用环境构建/组装，不 mock PM 工具安装；实际完整环境仍由前一项镜像 smoke 验收。
 
 ### 4. 启用 Actions
 
@@ -37,13 +39,13 @@ PM 管理的新镜像会保留原有功能选择，重新解析依赖、构建�
 
 ## 定时任务
 
-每 1 小时自动检查上游更新，有新版本自动构建并推送。
+每 1 小时自动检查最新稳定版，仅当该版本尚未发布自定义镜像时构建；手动 `force=true` 可重建最新实际版本。无更新时不运行构建相关测试。构建串行执行，不取消已经开始的发布；只有完整构建及验收成功后才同时发布版本 tag 和 `latest`。
 
 ## 输出镜像
 
 ```
 docker.io/<你的用户名>/hermes-agent:latest
-docker.io/<你的用户名>/hermes-agent:<upstream-sha>
+docker.io/<你的用户名>/hermes-agent:vX.Y.Z
 ```
 
 ### Sealed PM 启动诊断回归
@@ -64,7 +66,7 @@ sync/repair 不改；真实锁文件、extras、环境缺失及工具漂移仍�
 - 行为断言失败：仅对已审计的实现应用补丁，再跑同一套行为回归；失败则恢复源码并中止构建。
 - 测试导入/API 报错、跳过、空测试集、超时或未知且行为不正确的实现：中止构建，不当成可修复缺陷放行。
 
-补丁适配器本身仍精确识别已审计代码、重复执行幂等；旧版无 PM 镜像跳过。
+补丁适配器本身仍精确识别已审计代码、重复执行幂等；旧版无 PM 镜像不在支持范围。
 行为回归继续验证真实锁文件、extras、环境缺失、运行期插件变更及工具漂移不被隐藏。
 最终普通用户 smoke 也会调用真正的 `check_runtime`，不再仅检查 `--version`。
 

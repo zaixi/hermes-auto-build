@@ -36,11 +36,16 @@ class ImageDependencyTests(unittest.TestCase):
             facts = source / "facts.json"
             facts.write_text("{}")
             facts.chmod(0o600)
-            with patch("subprocess.run") as run:
+            def stage(command, **kwargs):
+                if any("prepare_tools(" in token for token in command):
+                    self.assertEqual(facts.stat().st_mode & 0o777, 0o600)
+            with patch("subprocess.run", side_effect=stage) as run:
                 adapter.rebuild_pm_environment(source, ["all"], facts)
-            installs = [call for call in run.call_args_list if "from pm import ensure; ensure('pnpm', explicit=True)" in call.args[0]]
-            self.assertEqual(len(installs), 1, "The final runtime must contain PM's locked pnpm")
+            installs = [call for call in run.call_args_list
+                        if any("prepare_tools(" in token for token in call.args[0])]
+            self.assertEqual(len(installs), 1, "Locked tools must be prepared into the image-owned store")
             self.assertEqual(installs[0].args[0][0], str(source / ".venv/bin/python"))
+            self.assertEqual(installs[0].args[0][-1], str(source / "tools"))
             self.assertEqual(installs[0].kwargs, {"cwd": source, "check": True})
             self.assertEqual(facts.stat().st_mode & 0o777, 0o644)
             with patch("subprocess.run", side_effect=[None, None, subprocess.CalledProcessError(1, "pnpm")]):
@@ -177,7 +182,7 @@ environments = ["unrelated"]
         self.assertIn("--no-install-project", command)
         self.assertEqual(command[command.index("--out") + 1], str(source / ".venv"))
         extras = {command[i + 1] for i, value in enumerate(command) if value == "--extra"}
-        self.assertEqual(extras, {"all", "matrix", "otlp", "feishu", "edge-tts", "silk", "image-custom"})
+        self.assertEqual(extras, {"all", "matrix", "otlp", "feishu", "edge-tts", "silk", "documents", "image-custom"})
 
     def test_selection_is_read_or_reported_absent_never_guessed(self):
         adapter = self.load_adapter()
@@ -230,17 +235,11 @@ environments = ["unrelated"]
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--requirements", result.stdout)
 
-    def test_report_dependency_uses_selected_documents_with_legacy_fallback(self):
+    def test_build_selects_release_owned_documents_even_without_a_baseline_selection(self):
         adapter = self.load_adapter()
-        requirements = ["pandas", "hermes-keenable-web"]
-        for baseline, expected in [
-            (["all", "documents"], requirements),
-            (["all"], requirements + ["openpyxl"]),
-            ([], requirements + ["openpyxl"]),
-        ]:
-            with self.subTest(baseline=baseline):
-                self.assertEqual(adapter.requirements_for_selection(requirements, baseline), expected)
-        self.assertEqual(requirements, ["pandas", "hermes-keenable-web"])
+        command = adapter.pm_build_command(Path("/image/hermes"), ["all"])
+        extras = {command[i + 1] for i, value in enumerate(command) if value == "--extra"}
+        self.assertIn("documents", extras, "XLSX must use the current release's documents capability")
 
     def test_custom_packages_are_unpinned_except_plugin_api_bounds(self):
         manifest = ROOT / "requirements-custom.txt"
@@ -284,18 +283,17 @@ environments = ["unrelated"]
             self.assertEqual(facts.stat().st_mode & 0o777, 0o644)
             self.assertFalse((environment / ".lock").exists())
 
-    def test_legacy_silk_requirement_comes_from_upstream_lazy_allowlist(self):
+    def test_missing_feature_is_rejected_instead_of_reading_old_lazy_allowlist(self):
         adapter = self.load_adapter()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "pyproject.toml").write_text('[project.optional-dependencies]\nfeishu=["lark-oapi==1.6.8"]\nedge-tts=["edge-tts==7.2.7"]\n')
             (root / "tools").mkdir()
             (root / "tools/lazy_deps.py").write_text('LAZY_DEPS: dict = {"stt.silk": ("pilk==0.2.4",)}\n')
-            selected = adapter.feature_requirements(root)
-            self.assertEqual(selected["silk"], ["pilk==0.2.4"])
-            self.assertEqual(selected["feishu"], ["lark-oapi==1.6.8"])
+            with self.assertRaisesRegex(ValueError, "feature declarations"):
+                adapter.feature_requirements(root)
 
-    def test_legacy_cli_keeps_xlsx_without_a_documents_extra(self):
+    def test_non_pm_base_is_rejected_without_invoking_legacy_installer(self):
         adapter = self.load_adapter()
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory)
@@ -307,8 +305,9 @@ environments = ["unrelated"]
                                     "--requirements", str(requirements)]), \
                     patch("shutil.which", return_value="/legacy/uv"), \
                     patch("subprocess.run") as run:
-                self.assertEqual(adapter.main(), 0)
-            self.assertEqual(run.call_args.args[0][-2:], ["pandas", "openpyxl"])
+                with self.assertRaisesRegex(ValueError, "supported PM"):
+                    adapter.main()
+            run.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -1,13 +1,8 @@
 ARG BASE_TAG=latest
 FROM nousresearch/hermes-agent:${BASE_TAG}
 
-# Inherit upstream PATH and /etc/profile.d/hermes.sh; keep its launcher shim
-# ahead of the baked venv. Older bases need a login-shell hook only.
-RUN if [ ! -r /etc/profile.d/hermes.sh ]; then \
-        mkdir -p /etc/profile.d && \
-        printf '%s\n' 'export PATH="/opt/hermes/bin:/opt/hermes/.venv/bin:$PATH"' \
-            > /etc/profile.d/hermes-path.sh; \
-    fi
+# Supported PM-era bases own PATH and /etc/profile.d/hermes.sh. Keep their
+# launcher shim ahead of the baked venv; runtime smoke verifies both shell modes.
 
 # Install additional apt packages
 # file: agent 识别文件类型（whp 2026-08-21 曾因缺 file 报 command not found）
@@ -66,8 +61,21 @@ RUN npm install -g --prefix /usr/local --allow-scripts=@larksuite/cli,agent-brow
 
 # Fail the build before publication if imports, native Silk, XLSX or fonts fail.
 COPY scripts/verify_image_dependencies.py scripts/install_image_dependencies.py /tmp/
-RUN mkdir -p /tmp/image-smoke-home && chown hermes /tmp/image-smoke-home && \
+COPY tests/test_pm_tool_staging_live.py /tmp/
+# stage_tools locks both stores. Keep the image store root-owned; prepare only
+# node as root in a separate seed, then hand that disposable store to hermes.
+RUN cd /opt/hermes && /opt/hermes/pm-runtime/bin/python -c \
+        "from pathlib import Path; from pm import stage_tools; from pm.store import current_target; stage_tools(['node'], source_store=Path('/opt/hermes/tools'), out=Path('/tmp/image-tool-seed'), target=current_target())" && \
+    chown -R hermes /tmp/image-tool-seed && \
+    mkdir -p /tmp/image-smoke-home && chown hermes /tmp/image-smoke-home && \
     cd / && HERMES_HOME=/tmp/image-smoke-home HOME=/tmp/image-smoke-home \
         /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python \
         /tmp/verify_image_dependencies.py --check-hermes && \
-    rm -rf /tmp/image-smoke-home /tmp/verify_image_dependencies.py /tmp/install_image_dependencies.py
+    HERMES_TOOL_SOURCE=/opt/hermes \
+        HERMES_TOOL_PM_PYTHON=/opt/hermes/pm-runtime/bin/python \
+        HERMES_TOOL_SEED_STORE=/tmp/image-tool-seed \
+        HERMES_IMAGE_ADAPTER=/tmp/install_image_dependencies.py \
+        /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python \
+        /tmp/test_pm_tool_staging_live.py && \
+    rm -rf /tmp/image-smoke-home /tmp/image-tool-seed /tmp/verify_image_dependencies.py \
+        /tmp/install_image_dependencies.py /tmp/test_pm_tool_staging_live.py

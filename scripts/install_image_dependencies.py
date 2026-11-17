@@ -4,40 +4,22 @@ import json
 import tomllib
 
 CUSTOM_EXTRA = "image-custom"
-
-
-def requirements_for_selection(requirements: list[str], baseline: list[str]) -> list[str]:
-    """Use upstream's selected documents extra; retain XLSX on older bases."""
-    return list(requirements) + ([] if "documents" in baseline else ["openpyxl"])
+FEATURE_EXTRAS = ("feishu", "edge-tts", "silk", "documents")
 
 
 def feature_requirements(source: Path) -> dict[str, list[str]]:
-    """Use release-owned extras, with the old allowlist as a legacy fallback."""
-    import ast
-
+    """Read required capabilities from the supported release's public extras."""
     data = tomllib.loads((source / "pyproject.toml").read_text())
     extras = data.get("project", {}).get("optional-dependencies", {})
-    features = {"feishu": "platform.feishu", "edge-tts": "tts.edge", "silk": "stt.silk"}
-    result = {extra: list(extras[extra]) for extra in features if extra in extras}
-    missing = features.keys() - result.keys()
-    if missing and not (source / "pm/build_env.py").is_file():
-        tree = ast.parse((source / "tools/lazy_deps.py").read_text())
-        for node in tree.body:
-            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "LAZY_DEPS":
-                if node.value is None:
-                    continue
-                allowlist = ast.literal_eval(node.value)
-                for extra in missing:
-                    if features[extra] in allowlist:
-                        result[extra] = list(allowlist[features[extra]])
-    if features.keys() - result.keys():
-        raise ValueError(f"Missing upstream feature declarations: {sorted(features.keys() - result.keys())}")
-    return result
+    missing = set(FEATURE_EXTRAS) - extras.keys()
+    if missing:
+        raise ValueError(f"Missing upstream feature declarations: {sorted(missing)}")
+    return {extra: list(extras[extra]) for extra in FEATURE_EXTRAS}
 
 
 def pm_build_command(source: Path, baseline: list[str]) -> list[str]:
     """Extend, rather than replace, the official image's selected capabilities."""
-    extras = sorted(set(baseline) | {"feishu", "edge-tts", "silk", CUSTOM_EXTRA})
+    extras = sorted(set(baseline) | set(FEATURE_EXTRAS) | {CUSTOM_EXTRA})
     command = [
         "python3", "-m", "pm.build_env", "--source", str(source),
         "--out", str(source / ".venv"), "--cache", str(source / "uv-cache"),
@@ -138,12 +120,17 @@ def rebuild_pm_environment(source: Path, baseline: list[str], facts: Path) -> No
     subprocess.run(command, cwd=source, check=True)
     subprocess.run([str(environment / "bin/python"), "-m", "docker.build_agent"],
                    cwd=source, check=True)
-    # Upstream's final Docker stage omits the frontend-only pnpm store, while
-    # passive PM health checks still require its lockfile entry on Linux.
-    # Install via PM (not npm), preserving the upstream version/hash contract.
-    subprocess.run([str(environment / "bin/python"), "-c",
-                    "from pm import ensure; ensure('pnpm', explicit=True)"],
-                   cwd=source, check=True)
+    # The payload is sealed after assembly. Runtime ensure() intentionally
+    # writes missing tools to HERMES_HOME/tools, which a fresh profile or data
+    # volume cannot see. Use the official build operation to publish the full
+    # locked tool closure and facts in the immutable image-owned store.
+    subprocess.run([
+        str(environment / "bin/python"), "-c",
+        "from pathlib import Path; import sys; from pm import prepare_tools; "
+        "from pm.store import current_target; "
+        "prepare_tools(['pnpm'], out=Path(sys.argv[1]), target=current_target())",
+        str(source / "tools"),
+    ], cwd=source, check=True)
     facts.chmod(0o644)
     for lock in (environment / ".lock", source / "pm-runtime" / ".lock"):
         lock.unlink(missing_ok=True)
@@ -151,8 +138,6 @@ def rebuild_pm_environment(source: Path, baseline: list[str], facts: Path) -> No
 
 def main() -> int:
     import argparse
-    import shutil
-    import subprocess
     import sys
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -160,42 +145,23 @@ def main() -> int:
     parser.add_argument("--requirements", required=True, type=Path)
     args = parser.parse_args()
     source = args.source.resolve()
+    if not (source / "pm/build_env.py").is_file():
+        raise ValueError("A supported PM base (v0.23.2+) is required; legacy installers are retired")
     requirements = [line.strip() for line in args.requirements.read_text().splitlines()
                     if line.strip() and not line.lstrip().startswith("#")]
+    # Bootstrap from outside the application environment that PM will replace.
+    sys.path.insert(0, str(source))
+    from pm.paths import facts_path
+
+    facts = facts_path()
+    baseline = recorded_selection(facts)
+    if baseline is None:
+        raise ValueError("Base image lacks pm.build_env --record-selection; refusing an unrecorded environment")
+    feature_requirements(source)
     project = source / "pyproject.toml"
-    official = feature_requirements(source)
-
-    if (source / "pm" / "build_env.py").is_file():
-        # PM is stdlib-only at bootstrap. Never invoke the application venv's
-        # interpreter while asking PM to atomically replace that same venv.
-        sys.path.insert(0, str(source))
-        from pm.paths import facts_path
-
-        facts = facts_path()
-        baseline = recorded_selection(facts)
-        if baseline is None:
-            raise ValueError(
-                "Base image predates the sealed dependency selection this build extends "
-                "(upstream pm.build_env --record-selection, first shipped in v0.21.7); "
-                "refusing to rebuild an unrecorded environment"
-            )
-        add_custom_extra(project, requirements_for_selection(requirements, baseline))
-        constrain_image_resolution(project)
-        rebuild_pm_environment(source, baseline, facts)
-        return 0
-    else:
-        # Older release tags still use uv on PATH. Preserve gap-fill support;
-        # do not install a second package manager into modern PM-owned images.
-        uv = shutil.which("uv")
-        if uv is None:
-            raise ValueError("Neither upstream PM nor its legacy uv installer is available")
-        selected = requirements_for_selection(requirements, [])
-        for specifications in official.values():
-            selected.extend(specifications)
-        command = [uv, "pip", "install", "--python", str(source / ".venv/bin/python"),
-                   "--no-cache", *selected]
-    print("Building image dependencies:", command, flush=True)
-    subprocess.run(command, cwd=source, check=True)
+    add_custom_extra(project, requirements)
+    constrain_image_resolution(project)
+    rebuild_pm_environment(source, baseline, facts)
     return 0
 
 
