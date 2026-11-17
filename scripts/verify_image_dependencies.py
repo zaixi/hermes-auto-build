@@ -49,6 +49,19 @@ def verify_cli_tools() -> None:
     print("Runtime CLI, login-shell PATH and browser launch OK", flush=True)
 
 
+def verify_pm_runtime_tools() -> None:
+    from pm import installed_package
+
+    package = installed_package("pnpm")
+    if package is None or package.binary is None:
+        raise RuntimeError("Missing lockfile-current PM pnpm entry")
+    result = subprocess.run([str(package.binary), "--version"], check=True,
+                            capture_output=True, text=True, timeout=30, cwd="/")
+    if result.stdout.strip() != package.version:
+        raise RuntimeError("PM pnpm executable version does not match recorded version")
+    print(f"PM pnpm entry/version OK: {package.version}", flush=True)
+
+
 def main() -> int:
     from packaging.requirements import Requirement
 
@@ -115,6 +128,8 @@ def main() -> int:
         if facts.exists():
             facts.read_text()
         if (args.source / "pm/build_env.py").is_file():
+            # This smoke runs under the runtime UID, not the root builder.
+            verify_pm_runtime_tools()
             # --version is metadata-only and cannot detect startup PM drift.
             subprocess.run([
                 sys.executable, "-c",

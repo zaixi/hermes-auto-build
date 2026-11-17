@@ -138,6 +138,12 @@ def rebuild_pm_environment(source: Path, baseline: list[str], facts: Path) -> No
     subprocess.run(command, cwd=source, check=True)
     subprocess.run([str(environment / "bin/python"), "-m", "docker.build_agent"],
                    cwd=source, check=True)
+    # Upstream's final Docker stage omits the frontend-only pnpm store, while
+    # passive PM health checks still require its lockfile entry on Linux.
+    # Install via PM (not npm), preserving the upstream version/hash contract.
+    subprocess.run([str(environment / "bin/python"), "-c",
+                    "from pm import ensure; ensure('pnpm', explicit=True)"],
+                   cwd=source, check=True)
     facts.chmod(0o644)
     for lock in (environment / ".lock", source / "pm-runtime" / ".lock"):
         lock.unlink(missing_ok=True)

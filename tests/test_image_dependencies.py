@@ -19,6 +19,53 @@ class ImageDependencyTests(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def load_smoke(self):
+        import sys
+        with patch.dict(sys.modules, {"install_image_dependencies": self.load_adapter()}):
+            spec = importlib.util.spec_from_file_location("image_smoke", ROOT / "scripts/verify_image_dependencies.py")
+            assert spec is not None and spec.loader is not None
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        return module
+
+    def test_rebuild_stages_pnpm_through_upstream_pm_before_readable_facts(self):
+        import subprocess
+        adapter = self.load_adapter()
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp)
+            facts = source / "facts.json"
+            facts.write_text("{}")
+            facts.chmod(0o600)
+            with patch("subprocess.run") as run:
+                adapter.rebuild_pm_environment(source, ["all"], facts)
+            installs = [call for call in run.call_args_list if "from pm import ensure; ensure('pnpm', explicit=True)" in call.args[0]]
+            self.assertEqual(len(installs), 1, "The final runtime must contain PM's locked pnpm")
+            self.assertEqual(installs[0].args[0][0], str(source / ".venv/bin/python"))
+            self.assertEqual(installs[0].kwargs, {"cwd": source, "check": True})
+            self.assertEqual(facts.stat().st_mode & 0o777, 0o644)
+            with patch("subprocess.run", side_effect=[None, None, subprocess.CalledProcessError(1, "pnpm")]):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    adapter.rebuild_pm_environment(source, ["all"], facts)
+
+    def test_nonroot_pnpm_smoke_executes_locked_entry_and_rejects_wrong_version(self):
+        import sys
+        import types
+        smoke = self.load_smoke()
+        package = types.SimpleNamespace(binary=Path("/store/pnpm/pnpm"), version="12.15.0")
+        pm = types.ModuleType("pm")
+        setattr(pm, "installed_package", lambda name: package)
+        with patch.dict(sys.modules, {"pm": pm}), patch.object(smoke.subprocess, "run") as run:
+            run.return_value.stdout = "12.15.0\n"
+            smoke.verify_pm_runtime_tools()
+            run.assert_called_once_with(["/store/pnpm/pnpm", "--version"], check=True,
+                                        capture_output=True, text=True, timeout=30, cwd="/")
+            run.return_value.stdout = "0.0.0\n"
+            with self.assertRaisesRegex(RuntimeError, "version"):
+                smoke.verify_pm_runtime_tools()
+        setattr(pm, "installed_package", lambda name: None)
+        with patch.dict(sys.modules, {"pm": pm}), self.assertRaisesRegex(RuntimeError, "pnpm"):
+            smoke.verify_pm_runtime_tools()
+
     def test_custom_extra_extends_upstream_without_changing_core_pins(self):
         adapter = self.load_adapter()
         original = '''[project]
