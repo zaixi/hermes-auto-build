@@ -133,7 +133,10 @@ class SealedRuntimeDriftTests(unittest.TestCase):
         self.assertIsNotNone(self.verdict())
 
     def test_tool_drift_is_not_hidden(self):
+        # Newer PM engines query target-aware optionality; retain the legacy
+        # attribute so this missing-tool fixture exercises both engine versions.
         tool = types.SimpleNamespace(optional=False, internal=False,
+                                     is_optional=lambda target: False,
                                      missing_reason=lambda target: None)
         with patch.object(self.engine, "_lockfile", return_value=types.SimpleNamespace(names=lambda: ["python"])), \
              patch.object(self.engine, "get_package", side_effect=lambda name: self.package if name == "venv" else tool), \
