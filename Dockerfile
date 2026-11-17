@@ -64,10 +64,23 @@ COPY scripts/verify_image_dependencies.py scripts/install_image_dependencies.py 
 COPY tests/test_pm_tool_staging_live.py /tmp/
 # stage_tools locks both stores. Keep the image store root-owned; prepare only
 # node as root in a separate seed, then hand that disposable store to hermes.
-RUN cd /opt/hermes && /opt/hermes/pm-runtime/bin/python -c \
+#
+# XDG contract: the base ships ENV XDG_RUNTIME_DIR=/tmp/hermes-runtime and
+# stage2 only adopts a directory owned by root or the remapped hermes UID. A
+# build-UID-owned tree therefore survives into production, where PUID 1000
+# cannot open agent-browser's socket dir. Pin the expected base value (a base
+# that moves it must fail this build, never be silently deleted as root),
+# keep both smokes on a private XDG dir, then leave an empty root-owned seed.
+RUN cd /opt/hermes && \
+    runtime_dir=/tmp/hermes-runtime && \
+    test "${XDG_RUNTIME_DIR:-}" = "$runtime_dir" || \
+        { echo "base moved XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}; update the pin in this Dockerfile" >&2; exit 1; } && \
+    /opt/hermes/pm-runtime/bin/python -c \
         "from pathlib import Path; from pm import stage_tools; from pm.store import current_target; stage_tools(['node'], source_store=Path('/opt/hermes/tools'), out=Path('/tmp/image-tool-seed'), target=current_target())" && \
     chown -R hermes /tmp/image-tool-seed && \
-    mkdir -p /tmp/image-smoke-home && chown hermes /tmp/image-smoke-home && \
+    mkdir -p /tmp/image-smoke-home/runtime && \
+    chown -R hermes /tmp/image-smoke-home && \
+    export XDG_RUNTIME_DIR=/tmp/image-smoke-home/runtime && \
     cd / && HERMES_HOME=/tmp/image-smoke-home HOME=/tmp/image-smoke-home \
         /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python \
         /tmp/verify_image_dependencies.py --check-hermes && \
@@ -78,4 +91,8 @@ RUN cd /opt/hermes && /opt/hermes/pm-runtime/bin/python -c \
         /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python \
         /tmp/test_pm_tool_staging_live.py && \
     rm -rf /tmp/image-smoke-home /tmp/image-tool-seed /tmp/verify_image_dependencies.py \
-        /tmp/install_image_dependencies.py /tmp/test_pm_tool_staging_live.py
+        /tmp/install_image_dependencies.py /tmp/test_pm_tool_staging_live.py && \
+    test ! -L "$runtime_dir" && rm -rf "$runtime_dir" && \
+    install -d -o root -g root -m 0700 "$runtime_dir" && \
+    test -z "$(ls -A "$runtime_dir")" && \
+    test "$(stat -c '%u:%g %a' "$runtime_dir")" = "0:0 700"

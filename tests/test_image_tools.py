@@ -105,6 +105,46 @@ class ImageToolTests(unittest.TestCase):
         self.assertIn("/tmp/test_pm_tool_staging_live.py", dockerfile)
         self.assertGreaterEqual(dockerfile.count("s6-setuidgid hermes"), 2)
 
+    def runtime_smoke_run(self):
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        for block in dockerfile.split("\nRUN "):
+            if "verify_image_dependencies.py --check-hermes" in block:
+                return dockerfile, block
+        self.fail("runtime smoke RUN block not found")
+
+    def test_build_smoke_cannot_pollute_the_runtime_uid_remap_directory(self):
+        dockerfile, run = self.runtime_smoke_run()
+        # The base owns XDG_RUNTIME_DIR; redeclaring it here would drift.
+        self.assertNotRegex(dockerfile, r"(?m)^\s*ENV\b.*\bXDG_RUNTIME_DIR=")
+        # Pin the expected base value instead of deleting an unchecked variable
+        # as root: an empty, trailing-slash or moved value must fail the build,
+        # with a diagnostic naming the actual value.
+        self.assertIn("runtime_dir=/tmp/hermes-runtime", run)
+        self.assertIn('test "${XDG_RUNTIME_DIR:-}" = "$runtime_dir" ||', run)
+        self.assertIn("update the pin in this Dockerfile", run)
+        # Exactly one export: a second one would put a smoke back on the base
+        # directory without tripping any other assertion.
+        self.assertEqual(run.count("export XDG_RUNTIME_DIR="), 1)
+        self.assertIn("export XDG_RUNTIME_DIR=/tmp/image-smoke-home/runtime", run)
+        export_at = run.index("export XDG_RUNTIME_DIR=")
+        self.assertLess(export_at, run.index("--check-hermes"))
+        self.assertLess(export_at, run.index("test_pm_tool_staging_live.py"))
+        # Leave an empty root-owned seed for stage2 to adopt after remapping.
+        self.assertIn('test ! -L "$runtime_dir"', run)
+        self.assertIn('rm -rf "$runtime_dir"', run)
+        self.assertIn('install -d -o root -g root -m 0700 "$runtime_dir"', run)
+        self.assertIn('test -z "$(ls -A "$runtime_dir")"', run)
+        self.assertIn('= "0:0 700"', run)
+        self.assertIn("0:0 700", dockerfile.rstrip().splitlines()[-1],
+                      "ownership assertion must be the image's final step")
+        # Verify before deleting, so "pin then reset" stays executable.
+        self.assertLess(run.index('test "${XDG_RUNTIME_DIR:-}" = "$runtime_dir"'),
+                        run.index('rm -rf "$runtime_dir"'))
+        # No failure swallowing anywhere in the block (|| true, ; :, ...).
+        # Note: ':' is non-word, so it needs no trailing \b (which never
+        # matches after it); 'true' must not swallow 'truthy' style words.
+        self.assertNotRegex(run, r"(\|\||;)\s*(?:true\b|:)")
+
     def test_dockerfile_installs_npm_commands_into_stable_runtime_path(self):
         dockerfile = (ROOT / "Dockerfile").read_text()
         self.assertIn("npm install -g --prefix /usr/local", dockerfile)

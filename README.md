@@ -33,6 +33,10 @@ Python 自定义包维护在 [`requirements-custom.txt`](./requirements-custom.t
 
 构建时会以普通用户、在源码目录之外检查包导入、Hermes CLI、XLSX 读写、Silk 编解码、中文字体和完整运行时 drift，失败不会发布镜像。另有强制真实工具回归：复制隔离 payload、仅准备已有 node、执行真实的 pnpm 构建期安装，然后让构建数据目录不可见，在全新 HOME 下验证锁定 entry 和实际版本；物理移走 entry 的负对照仍必须被拒绝。这项回归只替代耗时的应用环境构建/组装，不 mock PM 工具安装；实际完整环境仍由前一项镜像 smoke 验收。
 
+### 3.1 XDG 运行时目录所有权契约
+
+`XDG_RUNTIME_DIR` 由上游基座声明为 `/tmp/hermes-runtime`，本镜像不重复声明。启动脚本只接管属主为 root 或重映射后 hermes 的目录，因此构建期必须留下**空的、root:root 0700** 的种子：任何被构建期 hermes UID（基础镜像默认 10000，非 0）写入过的树都会在生产 `HERMES_UID=1000` 下被拒绝，导致 `agent-browser` 报 socket directory 不可写。两项 smoke 因此统一走私有目录 `/tmp/image-smoke-home/runtime`，构建末尾重建种子并用 `stat` 自证 `0:0 700` 且目录为空。基座若改动该路径，构建会带诊断信息明确失败，而不是由 root 删除未知目录；改这一行时必须保留固定值断言、符号链接拒绝、空目录校验和末尾自证。
+
 ### 4. 启用 Actions
 
 在仓库 Actions 页面启用 Workflow，然后手动触发一次构建。
