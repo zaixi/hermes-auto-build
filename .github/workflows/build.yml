@@ -6,9 +6,15 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: '强制构建（忽略版本检测）'
+        description: '强制重建最新上游版本（忽略已存在检查）'
         required: false
         default: 'false'
+
+# Serialize runs of this workflow so two schedules cannot race on :latest and
+# version-tag pushes. Never cancel a build that is already pushing.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: docker.io
@@ -29,15 +35,6 @@ jobs:
       - name: Test upstream version detection
         run: python3 -m unittest discover -s tests -p test_upstream_version.py -v
 
-      - name: Test image dependency assembly
-        run: python3 -m unittest discover -s tests -p test_image_dependencies.py -v
-
-      - name: Test browser markers and CLI contract
-        run: python3 -m unittest discover -s tests -p test_image_tools.py -v
-
-      - name: Test sealed PM behavior-first patch gate
-        run: python3 -m unittest discover -s tests -p test_sealed_drift_gate.py -v
-
       - name: Check upstream version
         id: check
         env:
@@ -52,6 +49,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test image dependency assembly
+        run: python3 -m unittest discover -s tests -p test_image_dependencies.py -v
+
+      - name: Test browser markers and CLI contract
+        run: python3 -m unittest discover -s tests -p test_image_tools.py -v
+
+      - name: Test sealed PM behavior-first patch gate
+        run: python3 -m unittest discover -s tests -p test_sealed_drift_gate.py -v
+
+      - name: Test build workflow contract
+        run: python3 -m unittest discover -s tests -p test_build_workflow.py -v
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -61,8 +70,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push (newest — also push latest)
-        if: needs.check.outputs.is_newest == 'true'
+      - name: Build and push (version tag, then latest)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -70,20 +78,7 @@ jobs:
             BASE_TAG=${{ needs.check.outputs.upstream_tag }}
           push: true
           tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check.outputs.upstream_tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check.outputs.upstream_tag }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          cache-to: type=inline
-
-      - name: Build and push (gap fill — only version tag)
-        if: needs.check.outputs.is_newest != 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          build-args: |
-            BASE_TAG=${{ needs.check.outputs.upstream_tag }}
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.check.outputs.upstream_tag }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           cache-to: type=inline
