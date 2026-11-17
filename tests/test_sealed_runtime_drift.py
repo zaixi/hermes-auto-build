@@ -133,15 +133,41 @@ class SealedRuntimeDriftTests(unittest.TestCase):
         self.assertIsNotNone(self.verdict())
 
     def test_tool_drift_is_not_hidden(self):
-        # Newer PM engines query target-aware optionality; retain the legacy
-        # attribute so this missing-tool fixture exercises both engine versions.
-        tool = types.SimpleNamespace(optional=False, internal=False,
-                                     is_optional=lambda target: False,
-                                     missing_reason=lambda target: None)
-        with patch.object(self.engine, "_lockfile", return_value=types.SimpleNamespace(names=lambda: ["python"])), \
-             patch.object(self.engine, "get_package", side_effect=lambda name: self.package if name == "venv" else tool), \
-             patch.object(self.engine, "_installed_location", return_value=None):
-            self.assertIn("python: not installed or outdated", self.verdict())
+        from pm.install import _lockfile
+        from pm.lock import Lockfile
+        from pm.package import Package
+        from pm.registry import get_package
+
+        # Use upstream's declarations and pin schema, not a hand-maintained
+        # Package interface. Only paths/install state belong to this fixture.
+        upstream_lock = Lockfile(SOURCE / "pm/lock.json")
+        lock_path = self.root / "tool-lock.json"
+        # Python is optional upstream; pnpm is a required tool, so its
+        # absence must remain visible without overriding package policy.
+        lock_path.write_text(json.dumps({"schema": 1, "packages": {"pnpm": {
+            "version": upstream_lock.version("pnpm"),
+            "artifacts": upstream_lock.pinned_artifacts("pnpm"),
+        }}}))
+        store = self.root / "tool-store"
+        writable_store = self.root / "writable-tools"
+        store.mkdir()
+        writable_store.mkdir()
+        with patch("pm.paths.lockfile_path", return_value=lock_path), \
+             patch("pm.paths.store_root", return_value=store), \
+             patch("pm.paths.writable_store_root", return_value=writable_store), \
+             patch.object(self.engine, "_lockfile", _lockfile), \
+             patch.object(self.engine, "get_package", get_package):
+            self.assertIsInstance(self.engine.get_package("pnpm"), Package)
+            lockfile = self.engine._lockfile()
+            self.assertIsInstance(lockfile, Lockfile)
+            self.assertEqual(lockfile.names(), ["pnpm"])
+            self.assertIsNotNone(lockfile.version("pnpm"))
+            self.assertTrue(lockfile.artifacts("pnpm", self.engine.current_target()))
+            before = {str(p.relative_to(self.root)): p.read_bytes()
+                      for p in self.root.rglob("*") if p.is_file()}
+            self.assertIn("pnpm: not installed or outdated", self.verdict())
+            self.assertEqual(before, {str(p.relative_to(self.root)): p.read_bytes()
+                                      for p in self.root.rglob("*") if p.is_file()})
 
 
 class PatchSafetyTests(unittest.TestCase):
